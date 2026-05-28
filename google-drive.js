@@ -427,60 +427,42 @@ async function syncFromDrive() {
 
 // ──── Drive File Operations ────
 async function uploadFileToDrive(fileName, content, mimeType, folderId) {
-  // Check if file already exists and update it
+  // Check if file already exists
   const searchResp = await gapi.client.drive.files.list({
     q: `name='${fileName}' and '${folderId}' in parents and trashed=false`,
     fields: 'files(id)',
   });
 
-  const boundary = '-------314159265358979323846';
-  const delimiter = `\r\n--${boundary}\r\n`;
-  const closeDelimiter = `\r\n--${boundary}--`;
+  const fileId = (searchResp.result.files && searchResp.result.files.length > 0) ? searchResp.result.files[0].id : null;
+  const token = gapi.client.getToken().access_token;
+  
+  // Use Resumable Upload (รองรับไฟล์ใหญ่กว่า 5MB)
+  const metadata = fileId ? { name: fileName } : { name: fileName, parents: [folderId] };
+  const uploadUrl = fileId ? 
+    `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=resumable` : 
+    `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable`;
 
-  const metadata = {
-    name: fileName,
-    mimeType: mimeType,
-  };
+  // 1. ขอ URL สำหรับอัปโหลด
+  const initRes = await fetch(uploadUrl, {
+    method: fileId ? 'PATCH' : 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(metadata)
+  });
 
-  if (searchResp.result.files && searchResp.result.files.length > 0) {
-    // Update existing file
-    const fileId = searchResp.result.files[0].id;
-    const multipartBody =
-      delimiter +
-      'Content-Type: application/json\r\n\r\n' +
-      JSON.stringify({ name: fileName }) +
-      delimiter +
-      `Content-Type: ${mimeType}\r\n\r\n` +
-      content +
-      closeDelimiter;
+  if (!initRes.ok) throw new Error('Failed to init resumable upload');
+  const location = initRes.headers.get('Location');
 
-    await gapi.client.request({
-      path: `/upload/drive/v3/files/${fileId}`,
-      method: 'PATCH',
-      params: { uploadType: 'multipart' },
-      headers: { 'Content-Type': `multipart/related; boundary="${boundary}"` },
-      body: multipartBody,
-    });
-  } else {
-    // Create new file
-    metadata.parents = [folderId];
-    const multipartBody =
-      delimiter +
-      'Content-Type: application/json\r\n\r\n' +
-      JSON.stringify(metadata) +
-      delimiter +
-      `Content-Type: ${mimeType}\r\n\r\n` +
-      content +
-      closeDelimiter;
+  // 2. อัปโหลดข้อมูลจริง
+  const uploadRes = await fetch(location, {
+    method: 'PUT',
+    headers: { 'Content-Type': mimeType },
+    body: content
+  });
 
-    await gapi.client.request({
-      path: '/upload/drive/v3/files',
-      method: 'POST',
-      params: { uploadType: 'multipart' },
-      headers: { 'Content-Type': `multipart/related; boundary="${boundary}"` },
-      body: multipartBody,
-    });
-  }
+  if (!uploadRes.ok) throw new Error('Failed to upload file content');
 }
 
 async function downloadFileFromDrive(fileId) {
