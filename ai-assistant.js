@@ -399,46 +399,52 @@ ${JSON.stringify(folderTree, null, 0)}`;
     throw new Error(err.error?.message || `API Error: ${res.status}`);
   }
 
-  const data = await res.json();
-  const choice = data.choices?.[0];
+  let data = await res.json();
+  let choice = data.choices?.[0];
   if (!choice) throw new Error('ไม่ได้รับการตอบกลับจาก AI');
 
-  const message = choice.message;
+  let message = choice.message;
   let responseText = message.content || '';
+  let iterations = 0;
 
-  // Check for function calls
-  if (message.tool_calls && message.tool_calls.length > 0) {
+  // Check for function calls (support chained tool calls up to 5 times)
+  while (message.tool_calls && message.tool_calls.length > 0 && iterations < 5) {
+    iterations++;
+    messages.push(message); // add assistant message with tool_calls ONCE
+
     for (const toolCall of message.tool_calls) {
       const { name, arguments: argsString } = toolCall.function;
       const args = JSON.parse(argsString || '{}');
       const result = await executeAiTool(name, args);
 
-      // Call Groq again with function result
-      messages.push(message); // add assistant message with tool_calls
       messages.push({
         role: 'tool',
         tool_call_id: toolCall.id,
         name: name,
         content: JSON.stringify(result)
       });
+    }
 
-      const followUpBody = { ...body, messages: messages };
-      const followUpRes = await fetch(url, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${groqApiKey}`
-        },
-        body: JSON.stringify(followUpBody),
-      });
+    const followUpBody = { ...body, messages: messages };
+    const followUpRes = await fetch(url, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${groqApiKey}`
+      },
+      body: JSON.stringify(followUpBody),
+    });
 
-      if (followUpRes.ok) {
-        const followUpData = await followUpRes.json();
-        const followUpChoice = followUpData.choices?.[0];
-        if (followUpChoice && followUpChoice.message.content) {
-          responseText += followUpChoice.message.content;
-        }
-      }
+    if (!followUpRes.ok) {
+      const err = await followUpRes.json().catch(() => ({}));
+      throw new Error(err.error?.message || `API Error: ${followUpRes.status}`);
+    }
+
+    data = await followUpRes.json();
+    choice = data.choices?.[0];
+    message = choice.message;
+    if (message.content) {
+      responseText += (responseText ? '\n' : '') + message.content;
     }
   }
 
