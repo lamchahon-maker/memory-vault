@@ -105,7 +105,9 @@ function getFileCategory(ext) {
     png: 'img', jpg: 'img', jpeg: 'img', gif: 'img', webp: 'img', svg: 'img', bmp: 'img', ico: 'img',
     pdf: 'pdf',
     mp4: 'video', webm: 'video', ogg: 'video', mov: 'video',
+    mp3: 'audio', wav: 'audio', flac: 'audio', m4a: 'audio',
     txt: 'txt', md: 'txt', log: 'txt', csv: 'txt', xml: 'txt', yml: 'txt', yaml: 'txt',
+    zip: 'archive', rar: 'archive', '7z': 'archive',
     glb: 'model3d', gltf: 'model3d', fbx: 'model3d', usdz: 'model3d', obj: 'model3d', stl: 'model3d',
   };
   return map[ext] || 'other';
@@ -121,10 +123,12 @@ function getMimeType(ext) {
     gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
     bmp: 'image/bmp', ico: 'image/x-icon',
     mp4: 'video/mp4', webm: 'video/webm', ogg: 'video/ogg', mov: 'video/quicktime',
+    mp3: 'audio/mpeg', wav: 'audio/wav', flac: 'audio/flac', m4a: 'audio/mp4',
     pdf: 'application/pdf',
-    txt: 'text/plain', md: 'text/plain', log: 'text/plain',
+    txt: 'text/plain', md: 'text/markdown', log: 'text/plain',
     csv: 'text/csv', xml: 'text/xml',
     yml: 'text/yaml', yaml: 'text/yaml',
+    zip: 'application/zip', rar: 'application/x-rar-compressed', '7z': 'application/x-7z-compressed',
     glb: 'model/gltf-binary', gltf: 'model/gltf+json', usdz: 'model/vnd.usdz+zip', fbx: 'application/octet-stream', obj: 'text/plain', stl: 'model/stl',
   };
   return map[ext] || 'application/octet-stream';
@@ -929,15 +933,53 @@ async function showPreview(file) {
     return;
   }
 
-  // Image Preview
+  // Audio Preview
+  if (cat === 'audio') {
+    let src = '';
+    if (file.dataURL) {
+      src = file.dataURL;
+    } else if (file.binaryData) {
+      const blob = new Blob([file.binaryData], { type: getMimeType(ext) });
+      src = URL.createObjectURL(blob);
+    }
+    previewContent.innerHTML = `
+      <div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; background:var(--bg-card); flex-direction:column; gap: 24px;">
+        <div style="width:120px; height:120px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; opacity:0.8; color:#fff;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+        </div>
+        <h3 style="color:var(--text); text-align:center; max-width:80%; word-break:break-all;">${file.name}</h3>
+        <audio controls autoplay style="width:80%; max-width:400px; outline:none;" src="${src}"></audio>
+      </div>
+    `;
+    return;
+  }
+
+  // Image Preview (Click to Zoom)
   if (isImageFile(ext)) {
-    const wrap = document.createElement('div');
-    wrap.className = 'preview-img-wrap';
-    const img = document.createElement('img');
-    img.src = file.dataURL;
-    img.alt = file.name;
-    wrap.appendChild(img);
-    previewContent.appendChild(wrap);
+    previewContent.innerHTML = `
+      <div id="preview-image-container" style="width:100%; height:100%; overflow:auto; display:flex; align-items:center; justify-content:center; background:#000;">
+        <img id="preview-image-zoom" src="${file.dataURL}" alt="${file.name}" style="max-width:100%; max-height:100%; object-fit:contain; transition: transform 0.2s; cursor:zoom-in;">
+      </div>
+    `;
+    const imgEl = document.getElementById('preview-image-zoom');
+    const container = document.getElementById('preview-image-container');
+    let zoomed = false;
+    imgEl.addEventListener('click', (e) => {
+      zoomed = !zoomed;
+      if (zoomed) {
+        imgEl.style.maxHeight = 'none';
+        imgEl.style.maxWidth = 'none';
+        imgEl.style.cursor = 'zoom-out';
+        container.style.alignItems = 'flex-start';
+        container.style.justifyContent = 'flex-start';
+      } else {
+        imgEl.style.maxHeight = '100%';
+        imgEl.style.maxWidth = '100%';
+        imgEl.style.cursor = 'zoom-in';
+        container.style.alignItems = 'center';
+        container.style.justifyContent = 'center';
+      }
+    });
     return;
   }
 
@@ -952,21 +994,118 @@ async function showPreview(file) {
     return;
   }
 
+  // ZIP Preview
+  if (cat === 'archive' && ext === 'zip') {
+    previewContent.innerHTML = `<div class="empty-state-preview"><h3>กำลังอ่านไฟล์ ZIP...</h3></div>`;
+    try {
+      const jszip = new JSZip();
+      let zipData = file.binaryData;
+      if (!zipData && file.dataURL) {
+        const res = await fetch(file.dataURL);
+        zipData = await res.arrayBuffer();
+      }
+      const zip = await jszip.loadAsync(zipData);
+      
+      let fileListHtml = '<ul style="list-style:none; padding:0; margin:0; text-align:left; width:100%; max-width:500px;">';
+      Object.keys(zip.files).forEach(filename => {
+        const zipEntry = zip.files[filename];
+        const icon = zipEntry.dir ? '📁' : '📄';
+        fileListHtml += `<li style="padding:10px 0; border-bottom:1px solid var(--border); display:flex; gap:12px; align-items:center;">
+          <span style="font-size:1.2rem;">${icon}</span>
+          <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">${filename}</span>
+        </li>`;
+      });
+      fileListHtml += '</ul>';
+      
+      previewContent.innerHTML = `
+        <div style="width:100%; height:100%; display:flex; flex-direction:column; align-items:center; padding:32px; overflow:auto; background:var(--bg-card);">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent); margin-bottom:16px;">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.29 7 12 12 20.71 7"></polyline><line x1="12" y1="22" x2="12" y2="12"></line>
+          </svg>
+          <h3 style="margin-bottom:24px; text-align:center; word-break:break-all;">ภายใน ${file.name}</h3>
+          ${fileListHtml}
+        </div>
+      `;
+    } catch(err) {
+      console.error(err);
+      previewContent.innerHTML = `<div class="empty-state-preview"><h3>ไม่สามารถอ่านไฟล์ ZIP ได้</h3><p>ไฟล์อาจเสียหายหรือไม่รองรับ</p></div>`;
+    }
+    return;
+  }
+
+  // Markdown Renderer
+  if (ext === 'md') {
+    if (typeof marked !== 'undefined') {
+      const htmlContent = marked.parse(file.textContent || '');
+      previewContent.innerHTML = `
+        <div class="markdown-body" style="width:100%; height:100%; overflow:auto; padding:32px; background:var(--bg-main); color:var(--text); text-align:left; line-height:1.6; font-size:1rem;">
+          <style>
+            .markdown-body h1, .markdown-body h2, .markdown-body h3 { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+            .markdown-body pre { background: #1e1e1e; padding: 16px; border-radius: 8px; overflow: auto; color: #fff; }
+            .markdown-body code { font-family: monospace; background: var(--bg-hover); padding: 2px 4px; border-radius: 4px; }
+            .markdown-body pre code { background: none; padding: 0; }
+            .markdown-body blockquote { border-left: 4px solid var(--accent); padding-left: 16px; margin-left: 0; color: var(--text-secondary); }
+            .markdown-body img { max-width: 100%; border-radius: 8px; }
+          </style>
+          ${htmlContent}
+        </div>
+      `;
+      return;
+    }
+  }
+
+  // CSV Table Viewer
+  if (ext === 'csv') {
+    const lines = (file.textContent || '').split('\n').filter(l => l.trim() !== '');
+    if (lines.length > 0) {
+      let tableHtml = '<table style="width:100%; border-collapse:collapse; text-align:left; font-size:0.875rem;">';
+      lines.forEach((line, i) => {
+        // Simple CSV split (doesn't handle quotes perfectly, but good enough for simple preview)
+        const cols = line.split(',');
+        tableHtml += '<tr>';
+        cols.forEach(col => {
+          const cellTag = i === 0 ? 'th' : 'td';
+          const cellStyle = i === 0 
+            ? 'background:var(--bg-hover); padding:10px; border:1px solid var(--border); font-weight:600; position:sticky; top:0; z-index:1;'
+            : 'padding:10px; border:1px solid var(--border); color:var(--text-secondary);';
+          tableHtml += `<${cellTag} style="${cellStyle}">${col.trim()}</${cellTag}>`;
+        });
+        tableHtml += '</tr>';
+      });
+      tableHtml += '</table>';
+      previewContent.innerHTML = `
+        <div style="width:100%; height:100%; overflow:auto; background:var(--bg-card);">
+          ${tableHtml}
+        </div>
+      `;
+      return;
+    }
+  }
+
   // Text / Code Preview
   if (isTextFile(ext) || file.textContent) {
-    const pre = document.createElement('div');
-    pre.className = 'text-preview';
-    const lines = (file.textContent || '').split('\n');
-    lines.forEach((line, i) => {
-      const lineEl = document.createElement('div');
-      const numSpan = document.createElement('span');
-      numSpan.className = 'line-number';
-      numSpan.textContent = i + 1;
-      lineEl.appendChild(numSpan);
-      lineEl.appendChild(document.createTextNode(line || ' '));
-      pre.appendChild(lineEl);
-    });
+    const isCode = ['js','ts','css','html','htm','json','py','java','c','cpp','rs','go','php','xml','yaml','yml','sh'].includes(ext);
+    const pre = document.createElement('pre');
+    pre.style.margin = '0';
+    pre.style.height = '100%';
+    pre.style.overflow = 'auto';
+    pre.style.padding = '16px';
+    pre.style.background = '#282c34'; // Atom One Dark bg
+    pre.style.color = '#abb2bf';
+    pre.style.fontSize = '14px';
+    pre.style.fontFamily = 'monospace';
+    
+    const code = document.createElement('code');
+    code.className = isCode ? `language-${ext}` : '';
+    code.textContent = file.textContent || '';
+    
+    pre.appendChild(code);
     previewContent.appendChild(pre);
+
+    // Apply Highlight.js if available
+    if (isCode && typeof hljs !== 'undefined') {
+      hljs.highlightElement(code);
+    }
     return;
   }
 

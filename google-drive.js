@@ -202,38 +202,56 @@ async function fetchUserInfo() {
 }
 
 async function fetchStorageQuota() {
+  const meter = document.getElementById('gdrive-storage-meter');
+  const usedEl = document.getElementById('storage-used');
+  const totalEl = document.getElementById('storage-total');
+  const percentEl = document.getElementById('storage-percent');
+  const progressEl = document.getElementById('storage-progress');
+
+  if (!meter) return;
+
+  // Show meter immediately with loading state
+  meter.classList.remove('hidden');
+  if (usedEl) usedEl.textContent = '...';
+  if (totalEl) totalEl.textContent = '5000.0 GB';
+
   try {
-    const resp = await gapi.client.drive.about.get({
-      fields: 'storageQuota'
+    const token = gapi.client.getToken();
+    if (!token) return;
+
+    const resp = await fetch('https://www.googleapis.com/drive/v3/about?fields=storageQuota', {
+      headers: { Authorization: `Bearer ${token.access_token}` }
     });
-    const quota = resp.result.storageQuota;
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const quota = data.storageQuota;
+
     if (quota) {
-      const limit = parseInt(quota.limit) || 0;
       const usage = parseInt(quota.usage) || 0;
-      
+      const limit = parseInt(quota.limit) || (5 * 1024 ** 4); // fallback 5TB
+
       const usedGB = (usage / (1024 ** 3)).toFixed(1);
-      const totalGB = limit > 0 ? (limit / (1024 ** 3)).toFixed(1) : '∞';
+      const totalTB = (limit / (1024 ** 4)).toFixed(0);
+      const totalLabel = totalTB >= 1 ? `${totalTB} TB` : `${(limit / (1024 ** 3)).toFixed(0)} GB`;
       const percent = limit > 0 ? Math.round((usage / limit) * 100) : 0;
-      
-      const meter = document.getElementById('gdrive-storage-meter');
-      const usedEl = document.getElementById('storage-used');
-      const totalEl = document.getElementById('storage-total');
-      const percentEl = document.getElementById('storage-percent');
-      const progressEl = document.getElementById('storage-progress');
-      
-      if (meter) meter.classList.remove('hidden');
+
       if (usedEl) usedEl.textContent = `${usedGB} GB`;
-      if (totalEl) totalEl.textContent = `${totalGB} GB`;
+      if (totalEl) totalEl.textContent = totalLabel;
       if (percentEl) percentEl.textContent = percent;
       if (progressEl) {
-        progressEl.style.width = `${Math.min(percent, 100)}%`;
-        if (percent > 90) progressEl.style.background = '#ef4444'; // Red
-        else if (percent > 75) progressEl.style.background = '#f59e0b'; // Yellow
+        progressEl.style.width = `${Math.max(Math.min(percent, 100), 1)}%`;
+        if (percent > 90) progressEl.style.background = '#ef4444';
+        else if (percent > 75) progressEl.style.background = '#f59e0b';
         else progressEl.style.background = 'var(--accent)';
       }
     }
   } catch(e) {
     console.log('Could not fetch storage quota:', e);
+    // Fallback: show 5TB total, unknown usage
+    if (usedEl) usedEl.textContent = '-- GB';
+    if (totalEl) totalEl.textContent = '5 TB';
+    if (percentEl) percentEl.textContent = '--';
   }
 }
 
