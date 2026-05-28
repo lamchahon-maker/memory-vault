@@ -1,4 +1,4 @@
-const CACHE_NAME = 'memory-vault-v9';
+const CACHE_NAME = 'memory-vault-v10';
 const ASSETS = [
   './',
   './index.html',
@@ -6,6 +6,7 @@ const ASSETS = [
   './app.js',
   './ai-assistant.js',
   './google-drive.js',
+  './config.js',
   './icon.svg',
   './manifest.json'
 ];
