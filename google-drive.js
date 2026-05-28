@@ -147,6 +147,7 @@ function initGIS() {
         gdriveUser = { name: tokenData.userName || 'User' };
         updateDriveUI();
         console.log('Google Drive: Restored session');
+        fetchStorageQuota();
       } catch(e) {
         localStorage.removeItem('memory-gdrive-token');
       }
