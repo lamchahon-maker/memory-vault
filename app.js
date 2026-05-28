@@ -419,16 +419,20 @@ function renderFileList(items) {
     if (a.isFolder && !b.isFolder) return -1;
     if (!a.isFolder && b.isFolder) return 1;
     switch (currentSortMode) {
-      case 'name': return a.name.localeCompare(b.name, 'th');
-      case 'size': return (b.size || 0) - (a.size || 0);
+      case 'name': 
+        return (a.name || '').localeCompare(b.name || '', 'th');
+      case 'size': 
+        return (b.size || 0) - (a.size || 0);
       case 'date':
-      default: return new Date(b.storedAt) - new Date(a.storedAt);
+      default: 
+        return new Date(b.storedAt || 0) - new Date(a.storedAt || 0);
     }
   });
 
   items.forEach((file, index) => {
     const isFolder = file.isFolder;
-    const ext = isFolder ? '' : getExtension(file.name);
+    const safeName = file.name || 'ไม่มีชื่อ';
+    const ext = isFolder ? '' : getExtension(safeName);
     const cat = isFolder ? 'folder' : getFileCategory(ext);
     
     const item = document.createElement('div');
@@ -448,7 +452,7 @@ function renderFileList(items) {
     item.innerHTML = `
       <div class="file-item-icon ${cat}">${iconHtml}</div>
       <div class="file-item-info">
-        <div class="file-item-name" title="${file.name}">${file.name}</div>
+        <div class="file-item-name" title="${safeName}">${safeName}</div>
         <div class="file-item-meta">${isFolder ? 'โฟลเดอร์' : formatFileSize(file.size)}</div>
       </div>
       ${isFolder ? `<svg class="folder-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>` : ''}
@@ -703,7 +707,8 @@ function handleSearch() {
   // Apply filters
   const results = pool.filter(f => {
     // 1. Text Query Match
-    const matchQuery = !query || f.name.toLowerCase().includes(query);
+    const safeName = f.name || '';
+    const matchQuery = !query || safeName.toLowerCase().includes(query);
     
     // 2. Type Match
     let matchType = true;
@@ -714,7 +719,7 @@ function handleSearch() {
         if (f.isFolder) {
           matchType = false;
         } else {
-          const ext = getExtension(f.name);
+          const ext = getExtension(safeName);
           const cat = getFileCategory(ext);
           
           if (filterType === 'image') {
@@ -1505,6 +1510,12 @@ async function init() {
   initPinLock();
 
   initEvents();
+
+  // Set initial sort mode UI
+  const sortSelect = document.getElementById('sort-select');
+  if (sortSelect) {
+    sortSelect.value = currentSortMode;
+  }
 
   // Load files from IndexedDB
   await refreshFiles();
