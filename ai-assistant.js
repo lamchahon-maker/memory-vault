@@ -6,7 +6,7 @@
 // ──── Config ────
 const AI_STORAGE_KEY = 'memory-ai-key';
 const GEMINI_STORAGE_KEY = 'memory-gemini-key';
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+const GROQ_MODEL = 'llama-3.1-8b-instant';
 const GEMINI_MODEL = 'gemini-2.5-flash';
 
 // API Key จะถูกเก็บใน localStorage เท่านั้น — ไม่มี hardcode ใน source code
