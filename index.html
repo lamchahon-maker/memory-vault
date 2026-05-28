@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Memory — A minimal file storage and preview application. Store, preview, and manage your files directly in the browser.">
+  <title>Memory — File Vault</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#7c3aed">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <!-- 3D Model Viewer Script -->
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').then(reg => {
+          console.log('ServiceWorker registered:', reg.scope);
+        }).catch(err => console.log('ServiceWorker error:', err));
+      });
+    }
+  </script>
+</head>
+<body>
+  <!-- Loading Screen -->
+  <div id="loading-screen" class="loading-screen">
+    <div class="loader-content">
+      <div class="loader-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <h2 class="loader-title">Memory</h2>
+      <div class="loader-bar"><div class="loader-bar-inner"></div></div>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" class="app hidden">
+    <!-- Header -->
+    <header id="app-header" class="header">
+      <div class="header-left">
+        <div class="logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+          <span>Memory</span>
+        </div>
+      </div>
+      <div class="header-center">
+        <div class="search-filter-wrap">
+          <select id="type-filter" class="type-filter" title="กรองตามประเภท">
+            <option value="all">ทั้งหมด</option>
+            <option value="folder">โฟลเดอร์</option>
+            <option value="image">รูปภาพ (jpg, png, ...)</option>
+            <option value="video">วิดีโอ (mp4, webm, ...)</option>
+            <option value="document">เอกสาร (pdf, docx, ...)</option>
+            <option value="code">โค้ด (html, js, css, ...)</option>
+            <option value="model3d">โมเดล 3D (glb, fbx, ...)</option>
+          </select>
+          <div class="search-box" id="search-box">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="M21 21l-4.35-4.35"/>
+            </svg>
+            <input type="text" id="search-input" placeholder="ค้นหาไฟล์..." autocomplete="off">
+          </div>
+        </div>
+      </div>
+      <div class="header-right">
+        <!-- Google Drive -->
+        <div class="gdrive-wrap" id="gdrive-wrap">
+          <button id="gdrive-btn" class="btn-gdrive" title="Google Drive">
+            <svg class="gdrive-icon" width="18" height="18" viewBox="0 0 24 24">
+              <path d="M4.433 22l-3.465-6 7.065-12.001h6.932L4.433 22z" fill="#4285F4"/>
+              <path d="M14.965 4l7.07 12H8.502l-3.535-6.001L11.965 4h3z" fill="#FBBC04"/>
+              <path d="M8.502 16h13.533l-3.465 6H1.068l3.465-6h3.969z" fill="#34A853"/>
+            </svg>
+            <span id="gdrive-status-dot" class="gdrive-status-dot"></span>
+          </button>
+          <div id="gdrive-dropdown" class="gdrive-dropdown hidden">
+            <div class="gdrive-dropdown-header">
+              <span class="gdrive-dropdown-title">Google Drive</span>
+              <span id="gdrive-status-text" class="gdrive-dropdown-status">ยังไม่ได้ตั้งค่า</span>
+            </div>
+            <div id="gdrive-user-info" class="gdrive-user-info hidden">
+              <div class="gdrive-avatar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              <span id="gdrive-user-name"></span>
+            </div>
+            <div class="gdrive-dropdown-actions">
+              <button id="gdrive-signin-btn" class="gdrive-action-btn" onclick="signInDrive()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                <span>เชื่อมต่อ Google Drive</span>
+              </button>
+              <button id="gdrive-sync-btn" class="gdrive-action-btn hidden" onclick="syncToDrive()">
+                <svg class="sync-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                <span>Sync ขึ้น Drive</span>
+              </button>
+              <button id="gdrive-restore-btn" class="gdrive-action-btn hidden" onclick="syncFromDrive()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>ดึงจาก Drive</span>
+              </button>
+              <button id="gdrive-setup-btn" class="gdrive-action-btn" onclick="showGDriveSetupModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span>ตั้งค่า API</span>
+              </button>
+              <button id="gdrive-signout" class="gdrive-action-btn gdrive-signout-btn hidden" onclick="signOutDrive()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                <span>ออกจากระบบ</span>
+              </button>
+            </div>
+            <div id="gdrive-setup-hint" class="gdrive-setup-hint">
+              <p>กด "ตั้งค่า API" เพื่อใส่ Client ID และ API Key</p>
+            </div>
+          </div>
+        </div>
+
+        <button id="theme-toggle" class="icon-btn" title="สลับธีม">
+          <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+        <button id="new-folder-btn" class="btn-secondary" title="สร้างโฟลเดอร์">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            <line x1="12" y1="11" x2="12" y2="17"/>
+            <line x1="9" y1="14" x2="15" y2="14"/>
+          </svg>
+          <span>โฟลเดอร์</span>
+        </button>
+        <button id="upload-btn" class="btn-primary" title="อัปโหลดไฟล์">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span>อัปโหลด</span>
+        </button>
+        <input type="file" id="file-input" multiple hidden>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-layout">
+      <!-- Left Sidebar — File List -->
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+          <h3>ไฟล์ทั้งหมด</h3>
+          <span id="file-count" class="badge">0</span>
+        </div>
+        <!-- Breadcrumb Navigation -->
+        <nav id="breadcrumb" class="breadcrumb">
+          <div id="breadcrumb-items" class="breadcrumb-items">
+            <!-- Rendered by JS -->
+          </div>
+        </nav>
+        <div id="file-list" class="file-list">
+          <!-- Files rendered here -->
+        </div>
+        <div id="empty-sidebar" class="empty-state-sidebar">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" opacity="0.4">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+          <p>โฟลเดอร์นี้ว่าง</p>
+          <span>ลากไฟล์มาวาง, สร้างโฟลเดอร์ หรือกดอัปโหลด</span>
+        </div>
+      </aside>
+
+      <!-- Center — Preview -->
+      <section id="preview-area" class="preview-area">
+        <div id="preview-content" class="preview-content">
+          <!-- Preview rendered here -->
+        </div>
+        <div id="empty-preview" class="empty-state-preview">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.3">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+          <h3>เลือกไฟล์เพื่อดูตัวอย่าง</h3>
+          <p>รองรับ HTML, รูปภาพ, ข้อความ, PDF และอื่นๆ</p>
+        </div>
+
+        <!-- Drop Zone Overlay -->
+        <div id="drop-overlay" class="drop-overlay hidden">
+          <div class="drop-overlay-content">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <h3>วางไฟล์ที่นี่</h3>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Sidebar — File Details -->
+      <aside id="details-panel" class="details-panel">
+        <div id="details-content" class="details-content hidden">
+          <div class="details-header">
+            <h3>รายละเอียดไฟล์</h3>
+            <button id="close-details" class="icon-btn-sm" title="ปิด">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="details-icon-wrap">
+            <div id="detail-icon" class="detail-icon"></div>
+          </div>
+
+          <div class="details-meta">
+            <div class="meta-row">
+              <span class="meta-label">ชื่อไฟล์</span>
+              <span id="detail-name" class="meta-value"></span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">ประเภท</span>
+              <span id="detail-type" class="meta-value"></span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">ขนาด</span>
+              <span id="detail-size" class="meta-value"></span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">อยู่ใน</span>
+              <span id="detail-location" class="meta-value"></span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">เก็บเมื่อ</span>
+              <span id="detail-date" class="meta-value"></span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">แก้ไขล่าสุด</span>
+              <span id="detail-modified" class="meta-value"></span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">นามสกุล</span>
+              <span id="detail-ext" class="meta-value"></span>
+            </div>
+          </div>
+
+          <div class="details-actions">
+            <button id="move-btn" class="btn-outline" title="ย้ายไปโฟลเดอร์อื่น">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              ย้ายไปโฟลเดอร์...
+            </button>
+            <button id="download-btn" class="btn-outline">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              ดาวน์โหลด
+            </button>
+            <button id="delete-btn" class="btn-danger">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+              ลบ
+            </button>
+          </div>
+        </div>
+
+        <div id="empty-details" class="empty-state-details">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" opacity="0.4">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="16" x2="12" y2="12"/>
+            <line x1="12" y1="8" x2="12.01" y2="8"/>
+          </svg>
+          <p>ข้อมูลไฟล์</p>
+          <span>เลือกไฟล์เพื่อดูรายละเอียด</span>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="delete-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </div>
+      <h3>ลบไฟล์นี้?</h3>
+      <p id="delete-modal-filename"></p>
+      <div class="modal-actions">
+        <button id="cancel-delete" class="btn-outline">ยกเลิก</button>
+        <button id="confirm-delete" class="btn-danger">ลบ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Folder Modal -->
+  <div id="folder-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-icon modal-icon-accent">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          <line x1="12" y1="11" x2="12" y2="17"/>
+          <line x1="9" y1="14" x2="15" y2="14"/>
+        </svg>
+      </div>
+      <h3>สร้างโฟลเดอร์ใหม่</h3>
+      <div class="modal-input-wrap">
+        <input type="text" id="folder-name-input" class="modal-input" placeholder="ชื่อโฟลเดอร์..." autocomplete="off" maxlength="100">
+      </div>
+      <div class="modal-actions">
+        <button id="cancel-folder" class="btn-outline">ยกเลิก</button>
+        <button id="confirm-folder" class="btn-primary">สร้าง</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Move to Folder Modal -->
+  <div id="move-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-icon modal-icon-accent">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+      </div>
+      <h3>ย้ายไปโฟลเดอร์</h3>
+      <div id="move-folder-list" class="move-folder-list">
+        <!-- Rendered by JS -->
+      </div>
+      <div class="modal-actions">
+        <button id="cancel-move" class="btn-outline">ยกเลิก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Google Drive Setup Modal -->
+  <div id="gdrive-setup-modal" class="modal-overlay hidden">
+    <div class="modal modal-wide">
+      <div class="modal-icon modal-icon-accent">
+        <svg width="32" height="32" viewBox="0 0 24 24">
+          <path d="M4.433 22l-3.465-6 7.065-12.001h6.932L4.433 22z" fill="#4285F4"/>
+          <path d="M14.965 4l7.07 12H8.502l-3.535-6.001L11.965 4h3z" fill="#FBBC04"/>
+          <path d="M8.502 16h13.533l-3.465 6H1.068l3.465-6h3.969z" fill="#34A853"/>
+        </svg>
+      </div>
+      <h3>ตั้งค่า Google Drive API</h3>
+      <p style="text-align: left; margin-bottom: 16px; line-height: 1.6;">
+        สร้าง API credentials ที่ <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: var(--accent);">คลิกที่นี่</a><br>
+        เปิดใช้ <strong>Google Drive API</strong> และสร้าง <strong>OAuth 2.0 Client ID</strong> (ประเภท Web) และ <strong>API Key</strong>
+      </p>
+      <div class="modal-input-wrap">
+        <label class="modal-input-label">Client ID</label>
+        <input type="text" id="gdrive-client-id-input" class="modal-input" placeholder="xxx.apps.googleusercontent.com" autocomplete="off">
+      </div>
+      <div class="modal-input-wrap">
+        <label class="modal-input-label">API Key</label>
+        <input type="text" id="gdrive-api-key-input" class="modal-input" placeholder="AIzaSy..." autocomplete="off">
+      </div>
+      <div class="modal-actions">
+        <button class="btn-outline" onclick="hideGDriveSetupModal()">ยกเลิก</button>
+        <button class="btn-primary" onclick="saveGDriveSetup()">บันทึกและเชื่อมต่อ</button>
+      </div>
+    </div>
+  </div>
+  <!-- AI Chat FAB -->
+  <button id="ai-chat-fab" class="ai-chat-fab" onclick="toggleAiChat()" title="Memory AI Assistant">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2a8 8 0 0 0-8 8c0 3.4 2.1 6.3 5 7.4V20a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-2.6c2.9-1.1 5-4 5-7.4a8 8 0 0 0-8-8z"/>
+      <line x1="9" y1="22" x2="15" y2="22"/>
+      <circle cx="9" cy="10" r="1" fill="currentColor"/>
+      <circle cx="15" cy="10" r="1" fill="currentColor"/>
+    </svg>
+    <span class="ai-fab-dot"></span>
+  </button>
+
+  <!-- AI Chat Panel -->
+  <div id="ai-chat-panel" class="ai-chat-panel hidden">
+    <div class="ai-chat-header">
+      <div class="ai-chat-header-left">
+        <div class="ai-avatar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a8 8 0 0 0-8 8c0 3.4 2.1 6.3 5 7.4V20a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-2.6c2.9-1.1 5-4 5-7.4a8 8 0 0 0-8-8z"/>
+          </svg>
+        </div>
+        <div>
+          <div class="ai-chat-title">Memory AI</div>
+          <div class="ai-chat-subtitle">ผู้ช่วยอัจฉริยะ</div>
+        </div>
+      </div>
+      <button class="ai-chat-close" onclick="toggleAiChat()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div id="ai-chat-messages" class="ai-chat-messages">
+      <div class="ai-msg ai-msg-bot">
+        <div class="ai-msg-bubble">
+          สวัสดีครับ! 🤖 ผมคือ <strong>Memory AI</strong><br>ผู้ช่วยอัจฉริยะประจำตู้เซฟไฟล์ของคุณ<br><br>
+          ลองถามผมได้เลย เช่น:<br>
+          • "หาไฟล์รูปภาพทั้งหมด"<br>
+          • "เปิดโฟลเดอร์ My Projects"<br>
+          • "สร้างโฟลเดอร์ใหม่ชื่อ Backup"
+        </div>
+      </div>
+    </div>
+    <div class="ai-chat-input-wrap">
+      <input type="text" id="ai-chat-input" class="ai-chat-input-field" placeholder="พิมพ์ข้อความ..." onkeydown="handleAiKeyPress(event)" autocomplete="off">
+      <button class="ai-send-btn" onclick="handleAiSend()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <script src="google-drive.js"></script>
+  <script src="ai-assistant.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

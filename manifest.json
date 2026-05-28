@@ -1,0 +1,17 @@
+{
+  "name": "Memory Vault",
+  "short_name": "Memory",
+  "description": "ตู้เซฟเก็บไฟล์ส่วนตัวอัจฉริยะ (Personal File Vault)",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#7c3aed",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
