@@ -647,14 +647,60 @@ async function showPreview(file) {
   `;
 }
 
+// ──── Upload Progress Overlay ────
+function showUploadProgress(fileName, percent) {
+  let overlay = document.getElementById('upload-progress-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'upload-progress-overlay';
+    overlay.innerHTML = `
+      <div class="upload-progress-box">
+        <div class="upload-progress-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="upload-progress-text" id="upload-progress-text">กำลังอัปโหลด...</div>
+        <div class="upload-progress-filename" id="upload-progress-filename"></div>
+        <div class="upload-progress-bar-wrap">
+          <div class="upload-progress-bar" id="upload-progress-bar"></div>
+        </div>
+        <div class="upload-progress-percent" id="upload-progress-percent">0%</div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }
+  overlay.classList.remove('hidden');
+  document.getElementById('upload-progress-filename').textContent = fileName;
+  document.getElementById('upload-progress-bar').style.width = percent + '%';
+  document.getElementById('upload-progress-percent').textContent = percent + '%';
+}
+
+function hideUploadProgress() {
+  const overlay = document.getElementById('upload-progress-overlay');
+  if (overlay) {
+    overlay.classList.add('fade-out');
+    setTimeout(() => overlay.remove(), 400);
+  }
+}
+
 // ──── Upload Files ────
 async function handleUpload(fileListInput) {
   const files = Array.from(fileListInput);
   if (files.length === 0) return;
 
+  const totalFiles = files.length;
   let count = 0;
+
+  showUploadProgress(files[0].name, 0);
+
   for (const file of files) {
     const ext = getExtension(file.name);
+
+    // แสดง % ก่อนเริ่มอ่านไฟล์
+    const percentStart = Math.round((count / totalFiles) * 100);
+    showUploadProgress(file.name, percentStart);
+
     const fileObj = {
       id: generateId(),
       name: file.name,
@@ -689,8 +735,13 @@ async function handleUpload(fileListInput) {
 
     await saveFile(fileObj);
     count++;
+
+    // อัปเดต %
+    const percentDone = Math.round((count / totalFiles) * 100);
+    showUploadProgress(file.name, percentDone);
   }
 
+  hideUploadProgress();
   showToast(`อัปโหลด ${count} ไฟล์สำเร็จ`, 'success');
   await refreshFiles();
   scheduleAutoSync();
