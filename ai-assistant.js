@@ -4,7 +4,7 @@
    ======================================== */
 
 const AI_STORAGE_KEY = 'memory-groq-key';
-const GROQ_MODEL = 'llama3-70b-8192';
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
 // หั่น Key เป็นท่อนๆ เพื่อหลบ GitHub Scanner (เพราะมันฉลาดพอที่จะถอดรหัส Base64 ได้)
 const _g1 = "gsk_Zx";
 const _g2 = "Y8jn1b";
