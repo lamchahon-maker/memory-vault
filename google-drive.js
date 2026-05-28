@@ -41,7 +41,7 @@ function saveGDriveConfig() {
 
 // ──── Init Google APIs ────
 function initGoogleDrive() {
-  loadGDriveConfig();
+  // loadGDriveConfig(); // ปิดการโหลดจาก localStorage เพราะเราฝังคีย์ไว้แล้ว
   updateDriveUI();
 
   if (!GDRIVE_CONFIG.CLIENT_ID || !GDRIVE_CONFIG.API_KEY) {
