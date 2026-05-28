@@ -2031,3 +2031,9 @@ body {
 .shake {
   animation: shake 0.4s ease;
 }
+/* GDrive Storage Meter */
+.gdrive-storage-meter { padding: 8px; margin: 4px 8px; border-radius: 8px; background: rgba(124, 58, 237, 0.05); }
+.gdrive-storage-meter.hidden { display: none; }
+.storage-text { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; display: flex; justify-content: space-between; }
+.storage-bar { width: 100%; height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
+.storage-progress { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.5s ease; }
