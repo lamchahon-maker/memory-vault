@@ -5,7 +5,7 @@
 
 // ──── Config ────
 const AI_STORAGE_KEY = 'memory-gemini-key';
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = 'gemini-2.0-flash';
 // ใช้เทคนิคต่อ String เพื่อหลบการตรวจจับของ GitHub Scanner
 const _k1 = "AIzaSyC9";
 const _k2 = "v2oewyHm";
