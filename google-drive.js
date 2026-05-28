@@ -5,10 +5,9 @@
 
 // ──── Config ────
 const GDRIVE_CONFIG = {
-  // ⚠️ ใส่ Client ID และ API Key ของคุณที่นี่
-  // สร้างได้ที่: https://console.cloud.google.com/apis/credentials
-  CLIENT_ID: '',
-  API_KEY: '',
+  // ฝัง Client ID และ API Key ให้ผู้ใช้เลย
+  CLIENT_ID: '140003183086-gim18025bvc0bq420jabgfokf1qgaijn.apps.googleusercontent.com',
+  API_KEY: 'AIzaSyCmtRsOEbYrjYUUHdxjD52yVhawvZwiP58',
   SCOPES: 'https://www.googleapis.com/auth/drive.file',
   FOLDER_NAME: 'Memory-Vault',
   METADATA_FILE: 'memory-vault-metadata.json',
