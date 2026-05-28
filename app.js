@@ -368,16 +368,191 @@ function renderFileList(items) {
   });
 }
 
+// ──── Trash / Recycle Bin ────
+let isViewingTrash = false;
+
+async function softDeleteFile(fileId) {
+  const file = await getFile(fileId);
+  if (!file) return;
+  file.inTrash = true;
+  file.deletedAt = new Date().toISOString();
+  file._originalParentId = file.parentId; // จำตำแหน่งเดิมเพื่อกู้คืน
+  await saveFile(file);
+}
+
+async function softDeleteRecursive(fileId) {
+  const file = allFiles.find(f => f.id === fileId);
+  if (!file) return;
+  if (file.isFolder) {
+    const children = allFiles.filter(f => f.parentId === fileId);
+    for (const child of children) {
+      await softDeleteRecursive(child.id);
+    }
+  }
+  await softDeleteFile(fileId);
+}
+
+async function restoreFromTrash(fileId) {
+  const file = await getFile(fileId);
+  if (!file) return false;
+  file.inTrash = false;
+  file.deletedAt = null;
+  // กู้คืนไปตำแหน่งเดิม ถ้าโฟลเดอร์เดิมยังอยู่
+  if (file._originalParentId) {
+    const parentExists = allFiles.find(f => f.id === file._originalParentId && !f.inTrash);
+    file.parentId = parentExists ? file._originalParentId : null;
+  }
+  delete file._originalParentId;
+  await saveFile(file);
+  return true;
+}
+
+async function permanentDeleteFile(fileId) {
+  await deleteFile(fileId);
+}
+
+async function cleanupTrash() {
+  const now = Date.now();
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+  const allData = await getAllFiles();
+  let cleaned = 0;
+  for (const f of allData) {
+    if (f.inTrash && f.deletedAt) {
+      const elapsed = now - new Date(f.deletedAt).getTime();
+      if (elapsed >= THREE_DAYS_MS) {
+        await deleteFile(f.id);
+        cleaned++;
+      }
+    }
+  }
+  if (cleaned > 0) {
+    console.log(`Trash cleanup: permanently deleted ${cleaned} expired items`);
+  }
+}
+
+function getTrashFiles() {
+  return allFiles.filter(f => f.inTrash);
+}
+
+function getTrashTimeRemaining(deletedAt) {
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+  const elapsed = Date.now() - new Date(deletedAt).getTime();
+  const remaining = THREE_DAYS_MS - elapsed;
+  if (remaining <= 0) return 'กำลังจะถูกลบถาวร';
+  const hours = Math.floor(remaining / (60 * 60 * 1000));
+  if (hours >= 24) return `เหลือ ${Math.floor(hours / 24)} วัน`;
+  return `เหลือ ${hours} ชั่วโมง`;
+}
+
+function toggleTrashView() {
+  isViewingTrash = !isViewingTrash;
+  const trashBtn = document.getElementById('trash-toggle-btn');
+  const sidebarTitle = document.querySelector('.sidebar-header h3');
+  
+  if (isViewingTrash) {
+    if (trashBtn) trashBtn.classList.add('active');
+    if (sidebarTitle) sidebarTitle.textContent = 'ถังขยะ';
+    clearSelection();
+    renderTrashList();
+  } else {
+    if (trashBtn) trashBtn.classList.remove('active');
+    if (sidebarTitle) sidebarTitle.textContent = 'ไฟล์ทั้งหมด';
+    clearSelection();
+    refreshFiles();
+  }
+}
+
+function renderTrashList() {
+  const trashFiles = getTrashFiles();
+  fileList.innerHTML = '';
+  fileCount.textContent = trashFiles.length;
+
+  if (trashFiles.length === 0) {
+    emptySidebar.classList.remove('hidden');
+    emptySidebar.querySelector('p').textContent = 'ถังขยะว่างเปล่า';
+    emptySidebar.querySelector('span').textContent = 'ไฟล์ที่ลบจะอยู่ที่นี่ 3 วัน ก่อนลบถาวร';
+    fileList.classList.add('hidden');
+    return;
+  }
+
+  emptySidebar.classList.add('hidden');
+  fileList.classList.remove('hidden');
+
+  trashFiles.sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
+
+  trashFiles.forEach((file, index) => {
+    const ext = file.isFolder ? '' : getExtension(file.name);
+    const cat = file.isFolder ? 'folder' : getFileCategory(ext);
+    const remaining = getTrashTimeRemaining(file.deletedAt);
+
+    const item = document.createElement('div');
+    item.className = 'file-item trash-item';
+    item.setAttribute('data-id', file.id);
+    item.style.animationDelay = `${index * 0.03}s`;
+
+    let iconHtml = file.isFolder
+      ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`
+      : (ext || '?');
+
+    item.innerHTML = `
+      <div class="file-item-icon ${cat}" style="opacity:0.5">${iconHtml}</div>
+      <div class="file-item-info">
+        <div class="file-item-name" title="${file.name}">${file.name}</div>
+        <div class="file-item-meta" style="color:var(--accent)">${remaining}</div>
+      </div>
+      <div class="trash-actions">
+        <button class="trash-restore-btn" title="กู้คืน" onclick="event.stopPropagation(); handleRestoreFile('${file.id}')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+        </button>
+        <button class="trash-perma-delete-btn" title="ลบถาวร" onclick="event.stopPropagation(); handlePermanentDelete('${file.id}')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    `;
+
+    fileList.appendChild(item);
+  });
+}
+
+async function handleRestoreFile(fileId) {
+  const file = allFiles.find(f => f.id === fileId);
+  if (!file) return;
+
+  // If it's a folder, restore children too
+  if (file.isFolder) {
+    const children = allFiles.filter(f => f.inTrash && f._originalParentId === fileId);
+    for (const child of children) {
+      await restoreFromTrash(child.id);
+    }
+  }
+
+  await restoreFromTrash(fileId);
+  showToast(`กู้คืน "${file.name}" สำเร็จ`, 'success');
+  allFiles = await getAllFiles();
+  renderTrashList();
+  scheduleAutoSync();
+}
+
+async function handlePermanentDelete(fileId) {
+  const file = allFiles.find(f => f.id === fileId);
+  if (!file) return;
+  await permanentDeleteFile(fileId);
+  showToast(`ลบ "${file.name}" ถาวรแล้ว`, 'info');
+  allFiles = await getAllFiles();
+  renderTrashList();
+}
+
 // ──── Search & Filter ────
 function handleSearch() {
   const query = searchInput.value.trim().toLowerCase();
   const filterType = typeFilter.value;
   
   // Decide which pool of files to use
-  let pool = allFiles;
+  // กรองไฟล์ที่อยู่ในถังขยะออก
+  let pool = allFiles.filter(f => !f.inTrash);
   if (!query && filterType === 'all') {
     // If no text search and no filter, only show items in current folder
-    pool = allFiles.filter(f => f.parentId === currentFolderId);
+    pool = pool.filter(f => f.parentId === currentFolderId);
   }
 
   // Apply filters
@@ -800,22 +975,8 @@ async function confirmDeleteFile() {
   const file = allFiles.find(f => f.id === deleteTargetId);
   const name = file?.name || 'ไฟล์';
 
-  // Recursive delete for folders
-  async function performDelete(idToDelete) {
-    const fileObj = allFiles.find(f => f.id === idToDelete);
-    if (!fileObj) return;
-
-    if (fileObj.isFolder) {
-      // Find children and delete them first
-      const children = allFiles.filter(f => f.parentId === idToDelete);
-      for (const child of children) {
-        await performDelete(child.id);
-      }
-    }
-    await deleteFile(idToDelete);
-  }
-
-  await performDelete(deleteTargetId);
+  // Soft delete: ย้ายลงถังขยะแทนลบถาวร
+  await softDeleteRecursive(deleteTargetId);
 
   if (selectedFileId === deleteTargetId || 
      (file?.isFolder && breadcrumbPath.some(p => p.id === deleteTargetId))) {
@@ -830,7 +991,7 @@ async function confirmDeleteFile() {
   }
 
   hideDeleteModal();
-  showToast(`ลบ "${name}" สำเร็จ`, 'info');
+  showToast(`ย้าย "${name}" ไปถังขยะแล้ว (กู้คืนได้ 3 วัน)`, 'info');
   await refreshFiles();
   scheduleAutoSync();
 }
@@ -1107,6 +1268,9 @@ async function init() {
 
   // Load files from IndexedDB
   await refreshFiles();
+
+  // ลบไฟล์ในถังขยะที่เกิน 3 วันอัตโนมัติ
+  await cleanupTrash();
 
   // Init Google Drive
   initGoogleDrive();

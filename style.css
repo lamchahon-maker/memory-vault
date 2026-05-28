@@ -1834,3 +1834,69 @@ body {
   font-weight: 700;
   color: var(--accent, #7c3aed);
 }
+
+/* ---------- Trash / Recycle Bin ---------- */
+.trash-toggle-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  margin-left: auto;
+}
+
+.trash-toggle-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.trash-toggle-btn.active {
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+.trash-item {
+  opacity: 0.8;
+}
+
+.trash-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.trash-restore-btn,
+.trash-perma-delete-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background: transparent;
+}
+
+.trash-restore-btn {
+  color: var(--success);
+}
+
+.trash-restore-btn:hover {
+  background: var(--success-subtle);
+}
+
+.trash-perma-delete-btn {
+  color: var(--danger);
+}
+
+.trash-perma-delete-btn:hover {
+  background: var(--danger-subtle);
+}

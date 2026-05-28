@@ -114,6 +114,18 @@ const AI_TOOLS = [
     },
   },
   {
+    name: 'create_text_file',
+    description: 'สร้างไฟล์ข้อความใหม่ (txt, md, html, css, js, json, csv ฯลฯ) พร้อมเขียนเนื้อหาลงไป',
+    parameters: {
+      type: 'object',
+      properties: {
+        fileName: { type: 'string', description: 'ชื่อไฟล์พร้อมนามสกุล เช่น memo.txt, note.md, index.html' },
+        content: { type: 'string', description: 'เนื้อหาที่ต้องการเขียนลงในไฟล์' },
+      },
+      required: ['fileName', 'content'],
+    },
+  },
+  {
     name: 'move_file',
     description: 'ย้ายไฟล์ไปยังโฟลเดอร์อื่น',
     parameters: {
@@ -127,11 +139,27 @@ const AI_TOOLS = [
   },
   {
     name: 'delete_file',
-    description: 'ลบไฟล์หรือโฟลเดอร์',
+    description: 'ลบไฟล์หรือโฟลเดอร์ (ย้ายลงถังขยะ กู้คืนได้ภายใน 3 วัน)',
     parameters: {
       type: 'object',
       properties: {
         fileId: { type: 'string', description: 'ID ของไฟล์ที่ต้องการลบ' },
+      },
+      required: ['fileId'],
+    },
+  },
+  {
+    name: 'view_trash',
+    description: 'ดูรายการไฟล์ในถังขยะทั้งหมด',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'restore_file',
+    description: 'กู้คืนไฟล์จากถังขยะกลับมาที่ตำแหน่งเดิม',
+    parameters: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'ID ของไฟล์ที่ต้องการกู้คืนจากถังขยะ' },
       },
       required: ['fileId'],
     },
@@ -206,7 +234,7 @@ async function executeAiTool(toolName, args) {
       showToast(`สร้างโฟลเดอร์ "${name}" สำเร็จ`, 'success');
       await refreshFiles();
       scheduleAutoSync();
-      return { success: true, message: `สร้างโฟลเดอร์ "${name}" แล้ว` };
+      return { success: true, message: `สร้างโฟลเดอร์ "${name}" แล้ว`, folderId: folderObj.id };
     }
 
     case 'move_file': {
@@ -221,29 +249,57 @@ async function executeAiTool(toolName, args) {
       return { success: true, message: `ย้ายไฟล์ "${fileToMove.name}" แล้ว` };
     }
 
+    case 'create_text_file': {
+      const { fileName, content } = args;
+      const ext = getExtension(fileName);
+      const fileObj = {
+        id: generateId(),
+        name: fileName,
+        type: getMimeType(ext) || 'text/plain',
+        size: new Blob([content]).size,
+        parentId: currentFolderId,
+        isFolder: false,
+        storedAt: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
+        textContent: content,
+      };
+      await saveFile(fileObj);
+      showToast(`สร้างไฟล์ "${fileName}" สำเร็จ`, 'success');
+      await refreshFiles();
+      scheduleAutoSync();
+      return { success: true, message: `สร้างไฟล์ "${fileName}" แล้ว`, fileId: fileObj.id };
+    }
+
     case 'delete_file': {
       const { fileId } = args;
       const fileToDelete = allFiles.find(f => f.id === fileId);
       if (!fileToDelete) return { success: false, message: 'ไม่พบไฟล์นี้' };
-      // If folder, delete children recursively
-      if (fileToDelete.isFolder) {
-        const deleteRecursive = async (fId) => {
-          const children = allFiles.filter(f => f.parentId === fId);
-          for (const child of children) {
-            if (child.isFolder) await deleteRecursive(child.id);
-            await deleteFile(child.id);
-          }
-          await deleteFile(fId);
-        };
-        await deleteRecursive(fileId);
-      } else {
-        await deleteFile(fileId);
-      }
-      showToast(`ลบ "${fileToDelete.name}" สำเร็จ`, 'info');
+      await softDeleteRecursive(fileId);
+      showToast(`ย้าย "${fileToDelete.name}" ไปถังขยะแล้ว`, 'info');
       clearSelection();
       await refreshFiles();
       scheduleAutoSync();
-      return { success: true, message: `ลบ "${fileToDelete.name}" แล้ว` };
+      return { success: true, message: `ย้าย "${fileToDelete.name}" ไปถังขยะแล้ว (กู้คืนได้ภายใน 3 วัน)` };
+    }
+
+    case 'view_trash': {
+      const trashFiles = getTrashFiles();
+      if (trashFiles.length === 0) return { success: true, message: 'ถังขยะว่างเปล่า', files: [] };
+      const list = trashFiles.map(f => ({
+        id: f.id, name: f.name, isFolder: !!f.isFolder,
+        deletedAt: f.deletedAt, remaining: getTrashTimeRemaining(f.deletedAt),
+      }));
+      // เปิดหน้าถังขยะให้ผู้ใช้เห็นด้วย
+      if (!isViewingTrash) toggleTrashView();
+      return { success: true, message: `มี ${trashFiles.length} รายการในถังขยะ`, files: list };
+    }
+
+    case 'restore_file': {
+      const { fileId } = args;
+      const fileToRestore = allFiles.find(f => f.id === fileId && f.inTrash);
+      if (!fileToRestore) return { success: false, message: 'ไม่พบไฟล์นี้ในถังขยะ' };
+      await handleRestoreFile(fileId);
+      return { success: true, message: `กู้คืน "${fileToRestore.name}" สำเร็จแล้ว` };
     }
 
     default:
@@ -267,6 +323,10 @@ async function callGroq(userMessage) {
 3. ระวัง! ถ้าผู้ใช้สั่ง "หาไฟล์วิดีโอ" หรือ "หารูปภาพ" ให้ใช้ \`fileType\` เท่านั้น **ห้ามใส่คำว่า "วิดีโอ" หรือ "รูปภาพ" ลงใน \`keyword\` เด็ดขาด** เพราะจะทำให้หาไฟล์ไม่เจอ (keyword ใช้สำหรับชื่อไฟล์เท่านั้น)
 4. ถ้าหาไม่เจอ ให้บอกตรงๆ แล้วเสนอทางเลือก
 5. ตอบกระชับ ไม่เยิ่นเย้อ ใช้ emoji เล็กน้อย
+6. เมื่อสร้างโฟลเดอร์แล้วต้องย้ายไฟล์เข้าไป ให้ใช้ folderId จาก create_folder result
+7. เมื่อลบไฟล์ ไฟล์จะถูกย้ายไปถังขยะ (Soft Delete) กู้คืนได้ภายใน 3 วัน — บอกผู้ใช้เสมอว่ากู้คืนได้
+8. คุณสามารถสร้างไฟล์ข้อความ (.txt .md .html .js .css .json .csv ฯลฯ) ได้โดยใช้ create_text_file
+9. เมื่อผู้ใช้ถามเรื่องถังขยะ ให้ใช้ view_trash เพื่อดูรายการ หรือ restore_file เพื่อกู้คืน
 
 ข้อมูลระบบปัจจุบัน:
 - โฟลเดอร์ที่กำลังเปิดอยู่: ${currentFolderId || 'หน้าแรก (root)'}
