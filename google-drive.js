@@ -289,11 +289,12 @@ async function syncToDrive() {
         content = file.dataURL;
         mimeType = 'text/plain'; // Store dataURL as text
       } else if (file.binaryData) {
-        // Convert ArrayBuffer to base64
+        // Convert ArrayBuffer to base64 efficiently to avoid memory crash
         const bytes = new Uint8Array(file.binaryData);
+        const chunkSize = 0x8000; // 32768
         let binary = '';
-        for (let i = 0; i < bytes.length; i++) {
-          binary += String.fromCharCode(bytes[i]);
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
         }
         content = btoa(binary);
         mimeType = 'text/plain'; // Store base64 as text
@@ -386,16 +387,19 @@ async function syncFromDrive() {
           fileObj.textContent = content;
         } else if (isImageFile(ext)) {
           fileObj.dataURL = content;
-        } else if (ext === 'pdf') {
-          // Decode base64 back to ArrayBuffer
-          const binary = atob(content);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-          }
-          fileObj.binaryData = bytes.buffer;
         } else {
-          fileObj.dataURL = content;
+          // Decode base64 back to ArrayBuffer for ALL binary files (Video, PDF, 3D, etc.)
+          try {
+            const binary_string = atob(content);
+            const len = binary_string.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+              bytes[i] = binary_string.charCodeAt(i);
+            }
+            fileObj.binaryData = bytes.buffer;
+          } catch(e) {
+            console.error('Error decoding binary data for', fileMeta.name, e);
+          }
         }
 
         await saveFile(fileObj);
