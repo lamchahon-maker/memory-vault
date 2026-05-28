@@ -1,4 +1,4 @@
-const CACHE_NAME = 'memory-vault-v4';
+const CACHE_NAME = 'memory-vault-v6';
 const ASSETS = [
   './',
   './index.html',

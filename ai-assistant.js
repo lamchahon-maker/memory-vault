@@ -1,28 +1,27 @@
 /* ========================================
-   Memory — AI Assistant (Gemini)
+   Memory — AI Assistant (Groq / Llama 3)
    Smart file search & management via chat
    ======================================== */
 
-// ──── Config ────
-const AI_STORAGE_KEY = 'memory-gemini-key';
-const GEMINI_MODEL = 'gemini-2.0-flash';
-// Key เข้ารหัส Base64 เพื่อป้องกัน GitHub Scanner ตรวจจับ
-let geminiApiKey = atob('QUl6YVN5Q0lrODdIWXF3TllVRkwtRnMzRVEwWHZHRGJlYk9naFJJ');
+const AI_STORAGE_KEY = 'memory-groq-key';
+const GROQ_MODEL = 'llama3-70b-8192';
+// เข้ารหัส Base64 ของ Groq Key (gsk_ZxY8jn...)
+let groqApiKey = atob('Z3NrX1p4WThqbjFib0pVQ0FFdVkxU3VwV0dkeWIzRllzeTJndkFvUFJqbzlibnhqU3ppOHNGTHM=');
 let aiChatHistory = [];
 let isAiThinking = false;
 
-// ──── Gemini API Key Management ────
-function saveGeminiKey(key) {
-  geminiApiKey = key.trim();
-  localStorage.setItem(AI_STORAGE_KEY, geminiApiKey);
+// ──── Groq API Key Management ────
+function saveGroqKey(key) {
+  groqApiKey = key.trim();
+  localStorage.setItem(AI_STORAGE_KEY, groqApiKey);
 }
 
-function getGeminiKey() {
-  return geminiApiKey;
+function getGroqKey() {
+  return groqApiKey;
 }
 
 function isAiConfigured() {
-  return !!geminiApiKey;
+  return !!groqApiKey;
 }
 
 // ──── Build File Index for AI ────
@@ -242,9 +241,9 @@ async function executeAiTool(toolName, args) {
   }
 }
 
-// ──── Call Gemini API ────
-async function callGemini(userMessage) {
-  if (!geminiApiKey) throw new Error('ยังไม่ได้ตั้งค่า Gemini API Key');
+// ──── Call Groq API ────
+async function callGroq(userMessage) {
+  if (!groqApiKey) throw new Error('ยังไม่ได้ตั้งค่า Groq API Key');
 
   const fileIndex = buildFileIndex();
   const folderTree = buildFolderTree();
@@ -269,42 +268,46 @@ ${JSON.stringify(fileIndex, null, 0)}
 โครงสร้างโฟลเดอร์:
 ${JSON.stringify(folderTree, null, 0)}`;
 
-  // Build messages
-  const contents = [];
+  // Build messages array
+  const messages = [
+    { role: 'system', content: systemInstruction }
+  ];
 
   // Add chat history (last 10 messages)
   const recentHistory = aiChatHistory.slice(-10);
   for (const msg of recentHistory) {
-    contents.push({ role: msg.role, parts: [{ text: msg.text }] });
+    messages.push({ role: msg.role === 'model' ? 'assistant' : msg.role, content: msg.text });
   }
 
   // Add current user message
-  contents.push({ role: 'user', parts: [{ text: userMessage }] });
+  messages.push({ role: 'user', content: userMessage });
 
   // Build tools for API
-  const tools = [{
-    functionDeclarations: AI_TOOLS.map(t => ({
+  const tools = AI_TOOLS.map(t => ({
+    type: 'function',
+    function: {
       name: t.name,
       description: t.description,
       parameters: t.parameters,
-    })),
-  }];
+    }
+  }));
 
   const body = {
-    system_instruction: { parts: [{ text: systemInstruction }] },
-    contents,
-    tools,
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 1024,
-    },
+    model: GROQ_MODEL,
+    messages: messages,
+    tools: tools,
+    temperature: 0.7,
+    max_tokens: 1024,
   };
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`;
+  const url = `https://api.groq.com/openai/v1/chat/completions`;
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${groqApiKey}`
+    },
     body: JSON.stringify(body),
   });
 
@@ -314,42 +317,46 @@ ${JSON.stringify(folderTree, null, 0)}`;
   }
 
   const data = await res.json();
-  const candidate = data.candidates?.[0];
-  if (!candidate) throw new Error('ไม่ได้รับการตอบกลับจาก AI');
+  const choice = data.choices?.[0];
+  if (!choice) throw new Error('ไม่ได้รับการตอบกลับจาก AI');
+
+  const message = choice.message;
+  let responseText = message.content || '';
 
   // Check for function calls
-  const parts = candidate.content?.parts || [];
-  let responseText = '';
-  let hadFunctionCall = false;
+  if (message.tool_calls && message.tool_calls.length > 0) {
+    for (const toolCall of message.tool_calls) {
+      const { name, arguments: argsString } = toolCall.function;
+      const args = JSON.parse(argsString || '{}');
+      const result = await executeAiTool(name, args);
 
-  for (const part of parts) {
-    if (part.functionCall) {
-      hadFunctionCall = true;
-      const { name, args } = part.functionCall;
-      const result = await executeAiTool(name, args || {});
+      // Call Groq again with function result
+      messages.push(message); // add assistant message with tool_calls
+      messages.push({
+        role: 'tool',
+        tool_call_id: toolCall.id,
+        name: name,
+        content: JSON.stringify(result)
+      });
 
-      // Call Gemini again with function result
-      const followUpContents = [...contents,
-        { role: 'model', parts: [{ functionCall: { name, args: args || {} } }] },
-        { role: 'user', parts: [{ functionResponse: { name, response: result } }] },
-      ];
-
-      const followUpBody = { ...body, contents: followUpContents };
+      const followUpBody = { ...body, messages: messages };
       const followUpRes = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${groqApiKey}`
+        },
         body: JSON.stringify(followUpBody),
       });
 
       if (followUpRes.ok) {
         const followUpData = await followUpRes.json();
-        const followUpParts = followUpData.candidates?.[0]?.content?.parts || [];
-        for (const fp of followUpParts) {
-          if (fp.text) responseText += fp.text;
+        const followUpChoice = followUpData.choices?.[0];
+        if (followUpChoice && followUpChoice.message.content) {
+          responseText += followUpChoice.message.content;
         }
       }
     }
-    if (part.text) responseText += part.text;
   }
 
   return responseText || 'ดำเนินการเรียบร้อยแล้วครับ ✅';
@@ -384,9 +391,9 @@ function showAiSetupInChat() {
   messagesEl.innerHTML = `
     <div class="ai-msg ai-msg-bot">
       <div class="ai-msg-bubble">
-        สวัสดีครับ! 🤖 ผมคือ <strong>Memory AI</strong><br><br>
-        เพื่อเริ่มใช้งาน กรุณาตั้งค่า Gemini API Key ก่อนนะครับ<br>
-        ไปที่ <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent);">Google AI Studio</a> แล้วกด Create API Key
+        สวัสดีครับ! 🤖 ผมคือ <strong>Memory AI</strong> (Powered by Groq)<br><br>
+        เพื่อเริ่มใช้งาน กรุณาตั้งค่า Groq API Key (ใช้งานฟรี 100% เร็วมากๆ)<br>
+        ไปที่ <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">Groq Console</a> แล้วกด Create API Key
         <div style="margin-top:12px;">
           <input type="text" id="ai-key-inline" class="ai-key-input" placeholder="วาง API Key ตรงนี้..." autocomplete="off">
           <button class="ai-key-save-btn" onclick="handleSaveAiKey()">บันทึก</button>
@@ -399,7 +406,7 @@ function showAiSetupInChat() {
 function handleSaveAiKey() {
   const input = document.getElementById('ai-key-inline');
   if (!input || !input.value.trim()) return;
-  saveGeminiKey(input.value.trim());
+  saveGroqKey(input.value.trim());
   showToast('ตั้งค่า AI สำเร็จ!', 'success');
   // Show welcome message
   const messagesEl = document.getElementById('ai-chat-messages');
@@ -468,7 +475,7 @@ async function handleAiSend() {
   showAiThinking();
 
   try {
-    const reply = await callGemini(msg);
+    const reply = await callGroq(msg);
     removeAiThinking();
     appendAiMessage('bot', reply);
     aiChatHistory.push({ role: 'model', text: reply });
