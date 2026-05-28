@@ -247,7 +247,7 @@ async function syncToDrive() {
   const syncBtn = document.getElementById('gdrive-sync-btn');
   if (syncBtn) {
     syncBtn.classList.add('syncing');
-    syncBtn.querySelector('span').textContent = 'กำลัง Sync...';
+    syncBtn.querySelector('span').textContent = 'กำลังคำนวณ...';
   }
 
   try {
@@ -276,9 +276,10 @@ async function syncToDrive() {
 
     // Upload actual files (only non-folders with content)
     let uploadCount = 0;
-    for (const file of files) {
-      if (file.isFolder) continue;
+    const uploadableFiles = files.filter(f => !f.isFolder && (f.textContent !== undefined || f.dataURL || f.binaryData));
+    const totalFiles = uploadableFiles.length;
 
+    for (const file of uploadableFiles) {
       let content = '';
       let mimeType = file.type || 'application/octet-stream';
 
@@ -296,8 +297,6 @@ async function syncToDrive() {
         }
         content = btoa(binary);
         mimeType = 'text/plain'; // Store base64 as text
-      } else {
-        continue;
       }
 
       await uploadFileToDrive(
@@ -306,7 +305,10 @@ async function syncToDrive() {
         mimeType,
         folderId
       );
+      
       uploadCount++;
+      const percent = totalFiles > 0 ? Math.round((uploadCount / totalFiles) * 100) : 100;
+      if (syncBtn) syncBtn.querySelector('span').textContent = `อัปโหลด ${percent}%`;
     }
 
     showToast(`Sync สำเร็จ! อัปโหลด ${uploadCount} ไฟล์ไป Google Drive`, 'success');
@@ -327,10 +329,10 @@ async function syncFromDrive() {
   if (!gdriveUser || isSyncing) return;
 
   isSyncing = true;
-  const syncBtn = document.getElementById('gdrive-sync-btn');
-  if (syncBtn) {
-    syncBtn.classList.add('syncing');
-    syncBtn.querySelector('span').textContent = 'กำลังดึงข้อมูล...';
+  const restoreBtn = document.getElementById('gdrive-restore-btn');
+  if (restoreBtn) {
+    restoreBtn.classList.add('syncing');
+    restoreBtn.querySelector('span').textContent = 'กำลังคำนวณ...';
   }
 
   try {
@@ -354,6 +356,8 @@ async function syncFromDrive() {
 
     // Download each file
     let downloadCount = 0;
+    const totalFiles = metaData.files.length;
+    
     for (const fileMeta of metaData.files) {
       // Search for file in Drive
       const fileSearch = await gapi.client.drive.files.list({
@@ -367,6 +371,8 @@ async function syncFromDrive() {
         // Just save folder metadata
         await saveFile(fileObj);
         downloadCount++;
+        const percent = totalFiles > 0 ? Math.round((downloadCount / totalFiles) * 100) : 100;
+        if (restoreBtn) restoreBtn.querySelector('span').textContent = `ดาวน์โหลด ${percent}%`;
         continue;
       }
 
@@ -393,8 +399,11 @@ async function syncFromDrive() {
         }
 
         await saveFile(fileObj);
-        downloadCount++;
       }
+      
+      downloadCount++;
+      const percent = totalFiles > 0 ? Math.round((downloadCount / totalFiles) * 100) : 100;
+      if (restoreBtn) restoreBtn.querySelector('span').textContent = `ดาวน์โหลด ${percent}%`;
     }
 
     showToast(`ดึงข้อมูลสำเร็จ! โหลด ${downloadCount} รายการจาก Google Drive`, 'success');
@@ -404,9 +413,10 @@ async function syncFromDrive() {
     showToast('ดึงข้อมูลล้มเหลว: ' + (err.result?.error?.message || err.message || 'Unknown error'), 'error');
   } finally {
     isSyncing = false;
-    if (syncBtn) {
-      syncBtn.classList.remove('syncing');
-      syncBtn.querySelector('span').textContent = 'Sync';
+    const restoreBtn = document.getElementById('gdrive-restore-btn');
+    if (restoreBtn) {
+      restoreBtn.classList.remove('syncing');
+      restoreBtn.querySelector('span').textContent = 'ดึงจาก Drive';
     }
   }
 }
