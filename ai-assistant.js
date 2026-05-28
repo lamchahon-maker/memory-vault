@@ -482,7 +482,6 @@ function showAiSetupInChat() {
     </div>
   `;
 }
-}
 
 function showAiWelcomeMessage() {
   const messagesEl = document.getElementById('ai-chat-messages');
