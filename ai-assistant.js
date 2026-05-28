@@ -6,7 +6,8 @@
 // ──── Config ────
 const AI_STORAGE_KEY = 'memory-gemini-key';
 const GEMINI_MODEL = 'gemini-2.5-flash';
-let geminiApiKey = localStorage.getItem(AI_STORAGE_KEY) || '';
+// ผู้ใช้ขอให้ฝัง API Key ลงในโค้ดเลย จะได้ไม่ต้องกรอกใหม่
+let geminiApiKey = 'AIzaSyC_Rj51dAp56xWwKbxU634pyNGtzDSooww';
 let aiChatHistory = [];
 let isAiThinking = false;
 
