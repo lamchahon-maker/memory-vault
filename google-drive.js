@@ -1,6 +1,7 @@
 /* ========================================
    Memory — Google Drive Integration
    Handles auth, upload, download, sync
+   v2: Incremental sync, parallel ops, auto-retry
    ======================================== */
 
 // ──── Config ────
@@ -11,6 +12,8 @@ const GDRIVE_CONFIG = {
   SCOPES: 'https://www.googleapis.com/auth/drive.file',
   FOLDER_NAME: 'Memory-Vault',
   METADATA_FILE: 'memory-vault-metadata.json',
+  MAX_CONCURRENT: 4,   // จำนวนไฟล์ที่อัปโหลด/ดาวน์โหลดพร้อมกัน
+  MAX_RETRIES: 3,      // จำนวนครั้งที่ retry เมื่อเน็ตหลุด
 };
 
 // ──── State ────
@@ -37,6 +40,62 @@ function saveGDriveConfig() {
     clientId: GDRIVE_CONFIG.CLIENT_ID,
     apiKey: GDRIVE_CONFIG.API_KEY,
   }));
+}
+
+// ──── Sync Snapshot (สำหรับ Incremental Sync) ────
+function getLastSyncSnapshot() {
+  try {
+    const raw = localStorage.getItem('memory-gdrive-sync-snapshot');
+    return raw ? JSON.parse(raw) : {};
+  } catch(e) { return {}; }
+}
+
+function saveLastSyncSnapshot(files) {
+  const snapshot = {};
+  for (const f of files) {
+    snapshot[f.id] = {
+      size: f.size,
+      lastModified: f.lastModified || f.storedAt,
+    };
+  }
+  localStorage.setItem('memory-gdrive-sync-snapshot', JSON.stringify(snapshot));
+}
+
+// ──── Retry Helper ────
+async function withRetry(fn, retries = GDRIVE_CONFIG.MAX_RETRIES) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch(err) {
+      if (attempt >= retries) throw err;
+      const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
+      console.warn(`Retry ${attempt + 1}/${retries} after ${delay}ms:`, err.message || err);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
+// ──── Parallel Runner ────
+async function runParallel(tasks, concurrency, onProgress) {
+  let completed = 0;
+  const total = tasks.length;
+  const results = [];
+
+  async function runNext(iterator) {
+    for (const [index, task] of iterator) {
+      results[index] = await task();
+      completed++;
+      if (onProgress) onProgress(completed, total);
+    }
+  }
+
+  const iterator = tasks.entries();
+  const workers = [];
+  for (let i = 0; i < Math.min(concurrency, tasks.length); i++) {
+    workers.push(runNext(iterator));
+  }
+  await Promise.all(workers);
+  return results;
 }
 
 // ──── Init Google APIs ────
@@ -239,7 +298,7 @@ async function ensureDriveFolder() {
   }
 }
 
-// ──── Sync: Upload all to Drive ────
+// ──── Sync: Upload to Drive (Incremental + Parallel) ────
 async function syncToDrive() {
   if (!gdriveUser || isSyncing) return;
 
@@ -253,6 +312,7 @@ async function syncToDrive() {
   try {
     const folderId = await ensureDriveFolder();
     const files = await getAllFiles();
+    const lastSnapshot = getLastSyncSnapshot();
 
     // Create metadata JSON with all file info (without binary data)
     const metadata = files.map(f => ({
@@ -266,20 +326,38 @@ async function syncToDrive() {
       lastModified: f.lastModified,
     }));
 
-    // Upload metadata file
-    await uploadFileToDrive(
+    // Upload metadata file (always)
+    await withRetry(() => uploadFileToDrive(
       GDRIVE_CONFIG.METADATA_FILE,
-      JSON.stringify({ version: 1, files: metadata, syncedAt: new Date().toISOString() }),
+      JSON.stringify({ version: 2, files: metadata, syncedAt: new Date().toISOString() }),
       'application/json',
       folderId
-    );
+    ));
 
-    // Upload actual files (only non-folders with content)
-    let uploadCount = 0;
-    const uploadableFiles = files.filter(f => !f.isFolder && (f.textContent !== undefined || f.dataURL || f.binaryData));
+    // Filter: only upload files that are new or changed (Incremental Sync)
+    const uploadableFiles = files.filter(f => {
+      if (f.isFolder) return false;
+      if (!f.textContent && !f.dataURL && !f.binaryData) return false;
+      const prev = lastSnapshot[f.id];
+      if (!prev) return true; // ไฟล์ใหม่
+      // ตรวจ size หรือ lastModified เปลี่ยนไหม
+      if (prev.size !== f.size) return true;
+      const curMod = f.lastModified || f.storedAt;
+      if (prev.lastModified !== curMod) return true;
+      return false;
+    });
+
     const totalFiles = uploadableFiles.length;
+    if (totalFiles === 0) {
+      showToast('ไฟล์ทั้งหมดเป็นปัจจุบันแล้ว ☁️', 'success');
+      saveLastSyncSnapshot(files);
+      return;
+    }
 
-    for (const file of uploadableFiles) {
+    if (syncBtn) syncBtn.querySelector('span').textContent = `0/${totalFiles}`;
+
+    // Build upload tasks
+    const tasks = uploadableFiles.map(file => () => {
       let content;
       let mimeType = file.type || 'application/octet-stream';
 
@@ -290,23 +368,24 @@ async function syncToDrive() {
         content = file.dataURL;
         mimeType = 'text/plain';
       } else if (file.binaryData) {
-        // ส่งเป็น Blob ตรงๆ ไม่ต้องแปลงเป็น Base64 (ไม่กิน RAM 2 เท่า)
         content = new Blob([file.binaryData], { type: mimeType });
       }
 
-      await uploadFileToDrive(
+      return withRetry(() => uploadFileToDrive(
         `file_${file.id}_${file.name}`,
         content,
         mimeType,
         folderId
-      );
-      
-      uploadCount++;
-      const percent = totalFiles > 0 ? Math.round((uploadCount / totalFiles) * 100) : 100;
-      if (syncBtn) syncBtn.querySelector('span').textContent = `อัปโหลด ${percent}%`;
-    }
+      ));
+    });
 
-    showToast(`Sync สำเร็จ! อัปโหลด ${uploadCount} ไฟล์ไป Google Drive`, 'success');
+    // Run in parallel
+    await runParallel(tasks, GDRIVE_CONFIG.MAX_CONCURRENT, (done, total) => {
+      if (syncBtn) syncBtn.querySelector('span').textContent = `${done}/${total}`;
+    });
+
+    saveLastSyncSnapshot(files);
+    showToast(`Sync สำเร็จ! อัปโหลด ${totalFiles} ไฟล์ไป Google Drive`, 'success');
   } catch(err) {
     console.error('Sync error:', err);
     showToast('Sync ล้มเหลว: ' + (err.result?.error?.message || err.message || 'Unknown error'), 'error');
@@ -319,7 +398,7 @@ async function syncToDrive() {
   }
 }
 
-// ──── Sync: Download from Drive ────
+// ──── Sync: Download from Drive (Skip existing + Parallel + Retry) ────
 async function syncFromDrive() {
   if (!gdriveUser || isSyncing) return;
 
@@ -346,61 +425,94 @@ async function syncFromDrive() {
 
     // Download metadata
     const metaFile = metaSearch.result.files[0];
-    const metaContent = await downloadFileFromDrive(metaFile.id);
+    const metaContent = await withRetry(() => downloadFileFromDrive(metaFile.id));
     const metaData = JSON.parse(metaContent);
 
-    // Download each file
-    let downloadCount = 0;
-    const totalFiles = metaData.files.length;
-    
-    for (const fileMeta of metaData.files) {
-      // Search for file in Drive
-      const fileSearch = await gapi.client.drive.files.list({
+    // Get existing local files for comparison
+    const localFiles = await getAllFiles();
+    const localMap = {};
+    for (const lf of localFiles) {
+      localMap[lf.id] = { size: lf.size, lastModified: lf.lastModified || lf.storedAt };
+    }
+
+    // Separate folders (save sequentially, quick) and files (download in parallel)
+    const folders = metaData.files.filter(f => f.isFolder);
+    const fileEntries = metaData.files.filter(f => !f.isFolder);
+
+    // Save folders first
+    for (const folderMeta of folders) {
+      await saveFile({ ...folderMeta });
+    }
+
+    // Filter out files that already exist locally with same size & date (Skip Existing)
+    const filesToDownload = fileEntries.filter(f => {
+      const local = localMap[f.id];
+      if (!local) return true; // ไม่มีในเครื่อง — ต้องโหลด
+      if (local.size !== f.size) return true;
+      const remoteMod = f.lastModified || f.storedAt;
+      if (local.lastModified !== remoteMod) return true;
+      return false;
+    });
+
+    const totalFiles = filesToDownload.length;
+    const skippedCount = fileEntries.length - totalFiles;
+
+    if (totalFiles === 0) {
+      showToast(`ไฟล์ทั้งหมดเป็นปัจจุบันแล้ว (ข้าม ${skippedCount} ไฟล์) ☁️`, 'success');
+      await refreshFiles();
+      return;
+    }
+
+    if (restoreBtn) restoreBtn.querySelector('span').textContent = `0/${totalFiles}`;
+
+    // Build download tasks
+    const tasks = filesToDownload.map(fileMeta => async () => {
+      // Search for file in Drive (with retry)
+      const fileSearch = await withRetry(() => gapi.client.drive.files.list({
         q: `name='file_${fileMeta.id}_${fileMeta.name}' and '${folderId}' in parents and trashed=false`,
         fields: 'files(id, name)',
-      });
+      }));
 
       const fileObj = { ...fileMeta };
-
-      if (fileMeta.isFolder) {
-        // Just save folder metadata
-        await saveFile(fileObj);
-        downloadCount++;
-        const percent = totalFiles > 0 ? Math.round((downloadCount / totalFiles) * 100) : 100;
-        if (restoreBtn) restoreBtn.querySelector('span').textContent = `ดาวน์โหลด ${percent}%`;
-        continue;
-      }
 
       if (fileSearch.result.files && fileSearch.result.files.length > 0) {
         const driveFile = fileSearch.result.files[0];
         const ext = fileMeta.name.split('.').pop()?.toLowerCase() || '';
 
         if (isTextFile(ext) || isImageFile(ext)) {
-          // Text/Image: ดาวน์โหลดเป็น text ตามเดิม
-          const content = await downloadFileFromDrive(driveFile.id);
+          const content = await withRetry(() => downloadFileFromDrive(driveFile.id));
           if (isTextFile(ext)) {
             fileObj.textContent = content;
           } else {
             fileObj.dataURL = content;
           }
         } else {
-          // Video/PDF/3D: ดาวน์โหลดเป็น binary ArrayBuffer ตรงๆ
-          try {
-            fileObj.binaryData = await downloadBinaryFromDrive(driveFile.id);
-          } catch(e) {
-            console.error('Error downloading binary for', fileMeta.name, e);
-          }
+          fileObj.binaryData = await withRetry(() => downloadBinaryFromDrive(driveFile.id));
         }
 
         await saveFile(fileObj);
       }
-      
-      downloadCount++;
-      const percent = totalFiles > 0 ? Math.round((downloadCount / totalFiles) * 100) : 100;
-      if (restoreBtn) restoreBtn.querySelector('span').textContent = `ดาวน์โหลด ${percent}%`;
-    }
+    });
 
-    showToast(`ดึงข้อมูลสำเร็จ! โหลด ${downloadCount} รายการจาก Google Drive`, 'success');
+    // Run in parallel
+    let failCount = 0;
+    const safeTasks = tasks.map(task => async () => {
+      try {
+        await task();
+      } catch(e) {
+        failCount++;
+        console.error('Download failed after retries:', e);
+      }
+    });
+
+    await runParallel(safeTasks, GDRIVE_CONFIG.MAX_CONCURRENT, (done, total) => {
+      if (restoreBtn) restoreBtn.querySelector('span').textContent = `${done}/${total}`;
+    });
+
+    let msg = `ดึงข้อมูลสำเร็จ! โหลด ${totalFiles - failCount} รายการ`;
+    if (skippedCount > 0) msg += ` (ข้าม ${skippedCount} ไฟล์ที่มีอยู่แล้ว)`;
+    if (failCount > 0) msg += ` ⚠️ ล้มเหลว ${failCount} ไฟล์`;
+    showToast(msg, failCount > 0 ? 'error' : 'success');
     await refreshFiles();
   } catch(err) {
     console.error('Restore error:', err);
@@ -509,7 +621,7 @@ function saveGDriveSetup() {
   initGoogleDrive();
 }
 
-// ──── Real-time Auto-Sync ────
+// ──── Real-time Auto-Sync (Incremental + Parallel) ────
 let autoSyncTimer = null;
 let autoSyncEnabled = true; // Can toggle off if desired
 
@@ -536,8 +648,9 @@ async function autoSyncInBackground() {
   try {
     const folderId = await ensureDriveFolder();
     const files = await getAllFiles();
+    const lastSnapshot = getLastSyncSnapshot();
 
-    // Upload metadata
+    // Upload metadata (always)
     const metadata = files.map(f => ({
       id: f.id,
       name: f.name,
@@ -549,45 +662,52 @@ async function autoSyncInBackground() {
       lastModified: f.lastModified,
     }));
 
-    await uploadFileToDrive(
+    await withRetry(() => uploadFileToDrive(
       GDRIVE_CONFIG.METADATA_FILE,
-      JSON.stringify({ version: 1, files: metadata, syncedAt: new Date().toISOString() }),
+      JSON.stringify({ version: 2, files: metadata, syncedAt: new Date().toISOString() }),
       'application/json',
       folderId
-    );
+    ));
 
-    // Upload actual files
-    for (const file of files) {
-      if (file.isFolder) continue;
+    // Only upload changed files (Incremental)
+    const changedFiles = files.filter(f => {
+      if (f.isFolder) return false;
+      const prev = lastSnapshot[f.id];
+      if (!prev) return true;
+      if (prev.size !== f.size) return true;
+      const curMod = f.lastModified || f.storedAt;
+      if (prev.lastModified !== curMod) return true;
+      return false;
+    });
 
-      let content = '';
-      let mimeType = file.type || 'application/octet-stream';
+    if (changedFiles.length > 0) {
+      const tasks = changedFiles.map(file => () => {
+        let content = '';
+        let mimeType = file.type || 'application/octet-stream';
 
-      if (file.textContent !== undefined) {
-        content = file.textContent;
-      } else if (file.dataURL) {
-        content = file.dataURL;
-        mimeType = 'text/plain';
-      } else if (file.binaryData) {
-        const bytes = new Uint8Array(file.binaryData);
-        let binary = '';
-        for (let i = 0; i < bytes.length; i++) {
-          binary += String.fromCharCode(bytes[i]);
+        if (file.textContent !== undefined) {
+          content = file.textContent;
+        } else if (file.dataURL) {
+          content = file.dataURL;
+          mimeType = 'text/plain';
+        } else if (file.binaryData) {
+          content = new Blob([file.binaryData], { type: mimeType });
+        } else {
+          return Promise.resolve();
         }
-        content = btoa(binary);
-        mimeType = 'text/plain';
-      } else {
-        continue;
-      }
 
-      await uploadFileToDrive(
-        `file_${file.id}_${file.name}`,
-        content,
-        mimeType,
-        folderId
-      );
+        return withRetry(() => uploadFileToDrive(
+          `file_${file.id}_${file.name}`,
+          content,
+          mimeType,
+          folderId
+        ));
+      });
+
+      await runParallel(tasks, GDRIVE_CONFIG.MAX_CONCURRENT);
     }
 
+    saveLastSyncSnapshot(files);
     showToast('Auto-sync สำเร็จ ☁️', 'success');
   } catch(err) {
     console.error('Auto-sync error:', err);
@@ -599,4 +719,3 @@ async function autoSyncInBackground() {
     }
   }
 }
-
