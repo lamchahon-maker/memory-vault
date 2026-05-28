@@ -4,11 +4,10 @@
    v2: Incremental sync, parallel ops, auto-retry
    ======================================== */
 
-// ──── Config ────
 const GDRIVE_CONFIG = {
-  // API credentials เก็บใน localStorage เท่านั้น — ไม่ hardcode ใน source code
-  CLIENT_ID: localStorage.getItem('memory-gdrive-clientid') || '',
-  API_KEY: localStorage.getItem('memory-gdrive-apikey') || '',
+  // API credentials: use APP_CONFIG first, fallback to localStorage
+  CLIENT_ID: (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.GDRIVE_CLIENT_ID) ? APP_CONFIG.GDRIVE_CLIENT_ID : (localStorage.getItem('memory-gdrive-clientid') || ''),
+  API_KEY: (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.GDRIVE_API_KEY) ? APP_CONFIG.GDRIVE_API_KEY : (localStorage.getItem('memory-gdrive-apikey') || ''),
   SCOPES: 'https://www.googleapis.com/auth/drive.file',
   FOLDER_NAME: 'Memory-Vault',
   METADATA_FILE: 'memory-vault-metadata.json',

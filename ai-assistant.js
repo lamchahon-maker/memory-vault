@@ -3,14 +3,15 @@
    Smart file search & management via chat
    ======================================== */
 
-const AI_STORAGE_KEY = 'memory-groq-key';
+// ──── Config ────
+const AI_STORAGE_KEY = 'memory-ai-key';
 const GEMINI_STORAGE_KEY = 'memory-gemini-key';
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+const GROQ_MODEL = 'llama3-70b-8192';
 const GEMINI_MODEL = 'gemini-2.5-flash';
 
 // API Key จะถูกเก็บใน localStorage เท่านั้น — ไม่มี hardcode ใน source code
-let groqApiKey = localStorage.getItem(AI_STORAGE_KEY) || '';
-let geminiApiKey = localStorage.getItem(GEMINI_STORAGE_KEY) || '';
+let groqApiKey = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.GROQ_API_KEY) ? APP_CONFIG.GROQ_API_KEY : (localStorage.getItem(AI_STORAGE_KEY) || '');
+let geminiApiKey = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.GEMINI_API_KEY) ? APP_CONFIG.GEMINI_API_KEY : (localStorage.getItem(GEMINI_STORAGE_KEY) || '');
 let aiChatHistory = [];
 let isAiThinking = false;
 
