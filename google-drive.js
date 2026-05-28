@@ -194,8 +194,45 @@ async function fetchUserInfo() {
     localStorage.setItem('memory-gdrive-token', JSON.stringify(token));
 
     updateDriveUI();
+    fetchStorageQuota();
   } catch(e) {
     console.log('Could not fetch user info:', e);
+  }
+}
+
+async function fetchStorageQuota() {
+  try {
+    const resp = await gapi.client.drive.about.get({
+      fields: 'storageQuota'
+    });
+    const quota = resp.result.storageQuota;
+    if (quota) {
+      const limit = parseInt(quota.limit) || 0;
+      const usage = parseInt(quota.usage) || 0;
+      
+      const usedGB = (usage / (1024 ** 3)).toFixed(1);
+      const totalGB = limit > 0 ? (limit / (1024 ** 3)).toFixed(1) : '∞';
+      const percent = limit > 0 ? Math.round((usage / limit) * 100) : 0;
+      
+      const meter = document.getElementById('gdrive-storage-meter');
+      const usedEl = document.getElementById('storage-used');
+      const totalEl = document.getElementById('storage-total');
+      const percentEl = document.getElementById('storage-percent');
+      const progressEl = document.getElementById('storage-progress');
+      
+      if (meter) meter.classList.remove('hidden');
+      if (usedEl) usedEl.textContent = `${usedGB} GB`;
+      if (totalEl) totalEl.textContent = `${totalGB} GB`;
+      if (percentEl) percentEl.textContent = percent;
+      if (progressEl) {
+        progressEl.style.width = `${Math.min(percent, 100)}%`;
+        if (percent > 90) progressEl.style.background = '#ef4444'; // Red
+        else if (percent > 75) progressEl.style.background = '#f59e0b'; // Yellow
+        else progressEl.style.background = 'var(--accent)';
+      }
+    }
+  } catch(e) {
+    console.log('Could not fetch storage quota:', e);
   }
 }
 
@@ -250,6 +287,8 @@ function updateDriveUI() {
     signOutBtn.classList.add('hidden');
     userInfo.classList.add('hidden');
     if (setupHint) setupHint.classList.add('hidden');
+    const meter = document.getElementById('gdrive-storage-meter');
+    if (meter) meter.classList.add('hidden');
   } else {
     // Not configured
     statusDot.className = 'gdrive-status-dot';

@@ -99,6 +99,10 @@
               </div>
               <span id="gdrive-user-name"></span>
             </div>
+            <div id="gdrive-storage-meter" class="gdrive-storage-meter hidden">
+              <div class="storage-text"><span id="storage-used">0 GB</span> / <span id="storage-total">-- GB</span> (ใช้ไป <span id="storage-percent">0</span>%)</div>
+              <div class="storage-bar"><div id="storage-progress" class="storage-progress" style="width: 0%;"></div></div>
+            </div>
             <div class="gdrive-dropdown-actions">
               <button id="gdrive-signin-btn" class="gdrive-action-btn" onclick="signInDrive()">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
