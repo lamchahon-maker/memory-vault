@@ -154,6 +154,22 @@ const AI_TOOLS = [
     },
   },
   {
+    name: 'create_folder_and_move_files',
+    description: 'สร้างโฟลเดอร์ใหม่ และย้ายไฟล์เข้าไปในโฟลเดอร์นั้นทันที (ใช้เมื่อผู้ใช้สั่งให้สร้างโฟลเดอร์และย้ายไฟล์เข้าพร้อมกัน)',
+    parameters: {
+      type: 'object',
+      properties: {
+        folderName: { type: 'string', description: 'ชื่อโฟลเดอร์ใหม่ที่ต้องการสร้าง' },
+        fileIds: { 
+          type: 'array', 
+          items: { type: 'string' },
+          description: 'รายชื่อ ID ของไฟล์ทั้งหมดที่ต้องการย้ายเข้าไป' 
+        },
+      },
+      required: ['folderName', 'fileIds'],
+    },
+  },
+  {
     name: 'delete_file',
     description: 'ลบไฟล์หรือโฟลเดอร์ (ย้ายลงถังขยะ กู้คืนได้ภายใน 3 วัน)',
     parameters: {
@@ -273,6 +289,37 @@ async function executeAiTool(toolName, args) {
       return { success: true, message: `ย้ายไฟล์สำเร็จ ${movedCount} รายการ` };
     }
 
+    case 'create_folder_and_move_files': {
+      const { folderName, fileIds } = args;
+      if (!Array.isArray(fileIds)) return { success: false, message: 'fileIds ต้องเป็น array' };
+
+      // 1. Create folder
+      const folderObj = {
+        id: generateId(),
+        name: folderName,
+        isFolder: true,
+        parentId: currentFolderId,
+        storedAt: new Date().toISOString(),
+      };
+      await saveFile(folderObj);
+
+      // 2. Move files
+      let movedCount = 0;
+      for (const id of fileIds) {
+        const fileToMove = allFiles.find(f => f.id === id);
+        if (fileToMove) {
+          fileToMove.parentId = folderObj.id;
+          await saveFile(fileToMove);
+          movedCount++;
+        }
+      }
+
+      showToast(`สร้างโฟลเดอร์ "${folderName}" และย้ายไฟล์สำเร็จ ${movedCount} รายการ`, 'success');
+      await refreshFiles();
+      scheduleAutoSync();
+      return { success: true, message: `สร้างโฟลเดอร์ "${folderName}" และย้ายไฟล์ลงไป ${movedCount} รายการเรียบร้อยแล้ว` };
+    }
+
     case 'create_text_file': {
       const { fileName, content } = args;
       const ext = getExtension(fileName);
@@ -345,8 +392,8 @@ async function callGroq(userMessage) {
 1. ตอบเป็นภาษาไทยเสมอ ใช้ภาษาสุภาพ เป็นกันเอง
 2. เมื่อผู้ใช้ขอค้นหาไฟล์ ให้ใช้ tools ที่มีเพื่อดำเนินการให้ทันที ห้ามปฏิเสธ
 3. ระวัง! ถ้าผู้ใช้สั่ง "หาไฟล์วิดีโอ" หรือ "หารูปภาพ" ให้ใช้ \`fileType\` เท่านั้น ห้ามใส่คำว่า "วิดีโอ" หรือ "รูปภาพ" ลงใน \`keyword\` (keyword ใช้สำหรับชื่อไฟล์เท่านั้น)
-4. ถ้าต้องสร้างโฟลเดอร์และย้ายไฟล์เข้าไป ให้ใช้ create_folder เพื่อเอา ID ก่อน แล้วตามด้วย move_files (ใส่ fileIds เป็น array)
-5. **ห้ามตอบกลับด้วยแท็ก XML เช่น <function> เด็ดขาด** คุณต้องเรียกใช้เครื่องมือผ่านระบบ Tool Calling (JSON format) ที่กำหนดไว้เท่านั้น
+4. ถ้าผู้ใช้สั่งสร้างโฟลเดอร์พร้อมกับย้ายไฟล์เข้าไป ให้ใช้ \`create_folder_and_move_files\` 
+5. **ห้ามพิมพ์โค้ด JSON ดิบ หรือแท็ก XML เช่น <function> ลงในแชทเด็ดขาด** คุณต้องเรียกใช้เครื่องมือผ่านระบบ Tool Calling เท่านั้น
 6. เมื่อลบไฟล์ ไฟล์จะถูกย้ายไปถังขยะ (กู้คืนได้ 3 วัน)
 7. ตอบกระชับ ไม่เยิ่นเย้อ ใช้ emoji เล็กน้อย
 
