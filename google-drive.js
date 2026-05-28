@@ -280,24 +280,18 @@ async function syncToDrive() {
     const totalFiles = uploadableFiles.length;
 
     for (const file of uploadableFiles) {
-      let content = '';
+      let content;
       let mimeType = file.type || 'application/octet-stream';
 
       if (file.textContent !== undefined) {
         content = file.textContent;
+        mimeType = 'text/plain';
       } else if (file.dataURL) {
         content = file.dataURL;
-        mimeType = 'text/plain'; // Store dataURL as text
+        mimeType = 'text/plain';
       } else if (file.binaryData) {
-        // Convert ArrayBuffer to base64 efficiently to avoid memory crash
-        const bytes = new Uint8Array(file.binaryData);
-        const chunkSize = 0x8000; // 32768
-        let binary = '';
-        for (let i = 0; i < bytes.length; i += chunkSize) {
-          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-        }
-        content = btoa(binary);
-        mimeType = 'text/plain'; // Store base64 as text
+        // ส่งเป็น Blob ตรงๆ ไม่ต้องแปลงเป็น Base64 (ไม่กิน RAM 2 เท่า)
+        content = new Blob([file.binaryData], { type: mimeType });
       }
 
       await uploadFileToDrive(
@@ -379,26 +373,22 @@ async function syncFromDrive() {
 
       if (fileSearch.result.files && fileSearch.result.files.length > 0) {
         const driveFile = fileSearch.result.files[0];
-        const content = await downloadFileFromDrive(driveFile.id);
-
         const ext = fileMeta.name.split('.').pop()?.toLowerCase() || '';
 
-        if (isTextFile(ext)) {
-          fileObj.textContent = content;
-        } else if (isImageFile(ext)) {
-          fileObj.dataURL = content;
+        if (isTextFile(ext) || isImageFile(ext)) {
+          // Text/Image: ดาวน์โหลดเป็น text ตามเดิม
+          const content = await downloadFileFromDrive(driveFile.id);
+          if (isTextFile(ext)) {
+            fileObj.textContent = content;
+          } else {
+            fileObj.dataURL = content;
+          }
         } else {
-          // Decode base64 back to ArrayBuffer for ALL binary files (Video, PDF, 3D, etc.)
+          // Video/PDF/3D: ดาวน์โหลดเป็น binary ArrayBuffer ตรงๆ
           try {
-            const binary_string = atob(content);
-            const len = binary_string.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-              bytes[i] = binary_string.charCodeAt(i);
-            }
-            fileObj.binaryData = bytes.buffer;
+            fileObj.binaryData = await downloadBinaryFromDrive(driveFile.id);
           } catch(e) {
-            console.error('Error decoding binary data for', fileMeta.name, e);
+            console.error('Error downloading binary for', fileMeta.name, e);
           }
         }
 
@@ -471,6 +461,17 @@ async function downloadFileFromDrive(fileId) {
     alt: 'media',
   });
   return resp.body;
+}
+
+// ดาวน์โหลดไฟล์ binary (วิดีโอ, PDF, โมเดล 3D) เป็น ArrayBuffer ตรงๆ
+async function downloadBinaryFromDrive(fileId) {
+  const token = gapi.client.getToken().access_token;
+  const resp = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+    { headers: { 'Authorization': 'Bearer ' + token } }
+  );
+  if (!resp.ok) throw new Error('Binary download failed');
+  return await resp.arrayBuffer();
 }
 
 // ──── Setup Modal ────
