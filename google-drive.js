@@ -6,14 +6,14 @@
 
 // ──── Config ────
 const GDRIVE_CONFIG = {
-  // ฝัง Client ID และ API Key ให้ผู้ใช้เลย
-  CLIENT_ID: '140003183086-gim18025bvc0bq420jabgfokf1qgaijn.apps.googleusercontent.com',
-  API_KEY: 'AIzaSyCmtRsOEbYrjYUUHdxjD52yVhawvZwiP58',
+  // API credentials เก็บใน localStorage เท่านั้น — ไม่ hardcode ใน source code
+  CLIENT_ID: localStorage.getItem('memory-gdrive-clientid') || '',
+  API_KEY: localStorage.getItem('memory-gdrive-apikey') || '',
   SCOPES: 'https://www.googleapis.com/auth/drive.file',
   FOLDER_NAME: 'Memory-Vault',
   METADATA_FILE: 'memory-vault-metadata.json',
-  MAX_CONCURRENT: 4,   // จำนวนไฟล์ที่อัปโหลด/ดาวน์โหลดพร้อมกัน
-  MAX_RETRIES: 3,      // จำนวนครั้งที่ retry เมื่อเน็ตหลุด
+  MAX_CONCURRENT: 4,
+  MAX_RETRIES: 3,
 };
 
 // ──── State ────
@@ -36,10 +36,8 @@ function loadGDriveConfig() {
 }
 
 function saveGDriveConfig() {
-  localStorage.setItem('memory-gdrive-config', JSON.stringify({
-    clientId: GDRIVE_CONFIG.CLIENT_ID,
-    apiKey: GDRIVE_CONFIG.API_KEY,
-  }));
+  localStorage.setItem('memory-gdrive-clientid', GDRIVE_CONFIG.CLIENT_ID);
+  localStorage.setItem('memory-gdrive-apikey', GDRIVE_CONFIG.API_KEY);
 }
 
 // ──── Sync Snapshot (สำหรับ Incremental Sync) ────

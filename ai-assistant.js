@@ -4,30 +4,41 @@
    ======================================== */
 
 const AI_STORAGE_KEY = 'memory-groq-key';
+const GEMINI_STORAGE_KEY = 'memory-gemini-key';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
-// หั่น Key เป็นท่อนๆ เพื่อหลบ GitHub Scanner (เพราะมันฉลาดพอที่จะถอดรหัส Base64 ได้)
-const _g1 = "gsk_Zx";
-const _g2 = "Y8jn1b";
-const _g3 = "oJUCAE";
-const _g4 = "uY1Sup";
-const _g5 = "WGdyb3";
-const _g6 = "FYsy2g";
-const _g7 = "vAoPRj";
-const _g8 = "o9bnxj";
-const _g9 = "Szi8sF";
-const _g10 = "Ls";
-let groqApiKey = _g1 + _g2 + _g3 + _g4 + _g5 + _g6 + _g7 + _g8 + _g9 + _g10;
+const GEMINI_MODEL = 'gemini-2.5-flash';
+
+// API Key จะถูกเก็บใน localStorage เท่านั้น — ไม่มี hardcode ใน source code
+let groqApiKey = localStorage.getItem(AI_STORAGE_KEY) || '';
+let geminiApiKey = localStorage.getItem(GEMINI_STORAGE_KEY) || '';
 let aiChatHistory = [];
 let isAiThinking = false;
 
-// ──── Groq API Key Management ────
-function saveGroqKey(key) {
-  groqApiKey = key.trim();
-  localStorage.setItem(AI_STORAGE_KEY, groqApiKey);
+// ──── AI Setup Modal & Key Management ────
+function showAiSetupModal() {
+  document.getElementById('groq-api-key-input').value = groqApiKey;
+  document.getElementById('gemini-api-key-input').value = geminiApiKey;
+  document.getElementById('ai-setup-modal').classList.remove('hidden');
 }
 
-function getGroqKey() {
-  return groqApiKey;
+function hideAiSetupModal() {
+  document.getElementById('ai-setup-modal').classList.add('hidden');
+}
+
+function saveAiSetup() {
+  const gKey = document.getElementById('groq-api-key-input').value.trim();
+  const gemKey = document.getElementById('gemini-api-key-input').value.trim();
+  
+  groqApiKey = gKey;
+  geminiApiKey = gemKey;
+  
+  localStorage.setItem(AI_STORAGE_KEY, groqApiKey);
+  localStorage.setItem(GEMINI_STORAGE_KEY, geminiApiKey);
+  
+  hideAiSetupModal();
+  showToast('บันทึกการตั้งค่า AI สำเร็จ', 'success');
+  
+  showAiWelcomeMessage();
 }
 
 function isAiConfigured() {
@@ -327,6 +338,7 @@ async function callGroq(userMessage) {
 7. เมื่อลบไฟล์ ไฟล์จะถูกย้ายไปถังขยะ (Soft Delete) กู้คืนได้ภายใน 3 วัน — บอกผู้ใช้เสมอว่ากู้คืนได้
 8. คุณสามารถสร้างไฟล์ข้อความ (.txt .md .html .js .css .json .csv ฯลฯ) ได้โดยใช้ create_text_file
 9. เมื่อผู้ใช้ถามเรื่องถังขยะ ให้ใช้ view_trash เพื่อดูรายการ หรือ restore_file เพื่อกู้คืน
+10. สำหรับการวิเคราะห์เนื้อหาไฟล์ หรือรูปภาพ (Summarize / Image Analysis) เราใช้ Gemini 2.5 Flash ให้บอกผู้ใช้ให้เปิดไฟล์นั้นแล้วกดปุ่ม "AI วิเคราะห์เนื้อหา" ที่มุมขวา
 
 ข้อมูลระบบปัจจุบัน:
 - โฟลเดอร์ที่กำลังเปิดอยู่: ${currentFolderId || 'หน้าแรก (root)'}
@@ -461,28 +473,22 @@ function showAiSetupInChat() {
   messagesEl.innerHTML = `
     <div class="ai-msg ai-msg-bot">
       <div class="ai-msg-bubble">
-        สวัสดีครับ! 🤖 ผมคือ <strong>Memory AI</strong> (Powered by Groq)<br><br>
-        เพื่อเริ่มใช้งาน กรุณาตั้งค่า Groq API Key (ใช้งานฟรี 100% เร็วมากๆ)<br>
-        ไปที่ <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">Groq Console</a> แล้วกด Create API Key
+        สวัสดีครับ! 🤖 ผมคือ <strong>Memory AI</strong> (Powered by Groq & Gemini)<br><br>
+        เพื่อเริ่มใช้งาน กรุณาตั้งค่า API Key (ฟรี) ก่อนครับ
         <div style="margin-top:12px;">
-          <input type="text" id="ai-key-inline" class="ai-key-input" placeholder="วาง API Key ตรงนี้..." autocomplete="off">
-          <button class="ai-key-save-btn" onclick="handleSaveAiKey()">บันทึก</button>
+          <button class="ai-key-save-btn" style="width: 100%;" onclick="showAiSetupModal()">ตั้งค่า API Keys</button>
         </div>
       </div>
     </div>
   `;
 }
+}
 
-function handleSaveAiKey() {
-  const input = document.getElementById('ai-key-inline');
-  if (!input || !input.value.trim()) return;
-  saveGroqKey(input.value.trim());
-  showToast('ตั้งค่า AI สำเร็จ!', 'success');
-  // Show welcome message
+function showAiWelcomeMessage() {
   const messagesEl = document.getElementById('ai-chat-messages');
   if (messagesEl) {
     messagesEl.innerHTML = '';
-    appendAiMessage('bot', 'พร้อมใช้งานแล้วครับ! 🎉 ลองถามอะไรผมก็ได้เลย เช่น:\n• "หาไฟล์รูปภาพทั้งหมดให้หน่อย"\n• "เปิดโฟลเดอร์ My Projects"\n• "สร้างโฟลเดอร์ชื่อ Backup ให้หน่อย"');
+    appendAiMessage('bot', 'พร้อมใช้งานแล้วครับ! 🎉 ลองถามอะไรผมก็ได้เลย เช่น:\n• "หาไฟล์รูปภาพทั้งหมดให้หน่อย"\n• "เปิดโฟลเดอร์ My Projects"\n• "วิเคราะห์ไฟล์ (Gemini)"');
   }
   // Update FAB indicator
   const dot = document.querySelector('.ai-fab-dot');
@@ -561,5 +567,79 @@ function handleAiKeyPress(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     handleAiSend();
+  }
+}
+
+// ──── Gemini Integration (File Analysis) ────
+async function analyzeFileWithGemini() {
+  if (!geminiApiKey) {
+    showToast('กรุณาตั้งค่า Gemini API Key ก่อนใช้งาน', 'error');
+    showAiSetupModal();
+    return;
+  }
+  
+  if (!selectedFileId) return;
+  const file = await getFile(selectedFileId);
+  if (!file || file.isFolder) return;
+
+  // Toggle button state
+  const btn = document.getElementById('ai-analyze-btn');
+  const txt = document.getElementById('ai-analyze-text');
+  btn.style.opacity = '0.7';
+  txt.textContent = 'กำลังวิเคราะห์...';
+
+  try {
+    let prompt = "วิเคราะห์ไฟล์นี้ให้หน่อย และบอกว่ามันคืออะไร มีเนื้อหาสำคัญอย่างไร สรุปมาให้กระชับและเข้าใจง่าย";
+    let payload = {
+      contents: [{
+        parts: [{ text: prompt }]
+      }]
+    };
+
+    if (file.textContent) {
+      // Text file
+      payload.contents[0].parts.push({ text: `\n\nเนื้อหาไฟล์:\n${file.textContent}` });
+    } else if (file.data) {
+      // Base64 file (Image, etc)
+      const base64Data = file.data.split(',')[1];
+      if (base64Data) {
+        payload.contents[0].parts.push({
+          inlineData: {
+            mimeType: file.type || 'image/jpeg',
+            data: base64Data
+          }
+        });
+      }
+    } else {
+      throw new Error('ไม่สามารถอ่านข้อมูลไฟล์นี้ได้');
+    }
+
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Gemini API Error: ${errText}`);
+    }
+
+    const data = await res.json();
+    const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'ไม่สามารถวิเคราะห์ได้';
+
+    // Show result in a modal or chat
+    const chatPanel = document.getElementById('ai-chat-panel');
+    if (chatPanel && chatPanel.classList.contains('hidden')) {
+      toggleAiChat();
+    }
+    appendAiMessage('bot', `**ผลการวิเคราะห์ไฟล์ "${file.name}":**\n\n${resultText}`);
+    
+  } catch (error) {
+    console.error(error);
+    showToast('เกิดข้อผิดพลาดในการวิเคราะห์', 'error');
+  } finally {
+    btn.style.opacity = '1';
+    txt.textContent = 'AI วิเคราะห์เนื้อหา';
   }
 }

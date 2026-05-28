@@ -173,6 +173,100 @@ let breadcrumbPath = [{ id: null, name: 'หน้าแรก' }];
 let selectedFileId = null;
 let deleteTargetId = null;
 let itemToMoveId = null;
+let currentSortMode = localStorage.getItem('memory-sort-mode') || 'date'; // date, name, size
+
+// ──── PIN Lock ────
+const PIN_STORAGE_KEY = 'memory-pin';
+const PIN_LOCK_TIMEOUT = 10 * 60 * 1000; // 10 นาที
+let lockTimer = null;
+let isLocked = false;
+
+function initPinLock() {
+  const savedPin = localStorage.getItem(PIN_STORAGE_KEY);
+  if (savedPin) {
+    showLockScreen();
+    startLockTimer();
+  }
+}
+
+function setupPin(pin) {
+  localStorage.setItem(PIN_STORAGE_KEY, pin);
+  showToast('PIN Lock ตั้งค่าแล้ว', 'success');
+}
+
+function showLockScreen() {
+  isLocked = true;
+  let overlay = document.getElementById('pin-lock-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'pin-lock-overlay';
+    overlay.innerHTML = `
+      <div class="pin-lock-box">
+        <div class="pin-lock-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+        <h2>Memory Locked</h2>
+        <p>กรุณาใส่ PIN เพื่อปลดล็อก</p>
+        <div class="pin-input-wrap">
+          <input type="password" id="pin-input" class="pin-input" maxlength="10" placeholder="••••••" inputmode="numeric" autocomplete="off">
+        </div>
+        <div id="pin-error" class="pin-error"></div>
+        <button class="pin-submit-btn" onclick="verifyPin()">Unlock</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const pinInput = document.getElementById('pin-input');
+    pinInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') verifyPin();
+    });
+  }
+  overlay.classList.remove('hidden');
+  setTimeout(() => {
+    const pinInput = document.getElementById('pin-input');
+    if (pinInput) { pinInput.value = ''; pinInput.focus(); }
+  }, 200);
+}
+
+function verifyPin() {
+  const input = document.getElementById('pin-input');
+  const error = document.getElementById('pin-error');
+  if (!input) return;
+  const savedPin = localStorage.getItem(PIN_STORAGE_KEY);
+  if (input.value === savedPin) {
+    isLocked = false;
+    document.getElementById('pin-lock-overlay').classList.add('hidden');
+    error.textContent = '';
+    resetLockTimer();
+  } else {
+    error.textContent = 'PIN ไม่ถูกต้อง';
+    input.value = '';
+    input.focus();
+    // Shake animation
+    const box = document.querySelector('.pin-lock-box');
+    box.classList.add('shake');
+    setTimeout(() => box.classList.remove('shake'), 500);
+  }
+}
+
+function startLockTimer() {
+  resetLockTimer();
+  // Listen for user activity
+  ['mousemove', 'keydown', 'touchstart', 'click'].forEach(evt => {
+    document.addEventListener(evt, resetLockTimer, { passive: true });
+  });
+}
+
+function resetLockTimer() {
+  if (lockTimer) clearTimeout(lockTimer);
+  const savedPin = localStorage.getItem(PIN_STORAGE_KEY);
+  if (!savedPin) return;
+  lockTimer = setTimeout(() => {
+    if (!isLocked) showLockScreen();
+  }, PIN_LOCK_TIMEOUT);
+}
 
 // ──── DOM Elements ────
 const $ = (sel) => document.querySelector(sel);
@@ -320,11 +414,16 @@ function renderFileList(items) {
     fileList.classList.remove('hidden');
   }
 
-  // Sort: Folders first, then files
+  // Sort: Folders first, then files by selected mode
   items.sort((a, b) => {
     if (a.isFolder && !b.isFolder) return -1;
     if (!a.isFolder && b.isFolder) return 1;
-    return new Date(b.storedAt) - new Date(a.storedAt);
+    switch (currentSortMode) {
+      case 'name': return a.name.localeCompare(b.name, 'th');
+      case 'size': return (b.size || 0) - (a.size || 0);
+      case 'date':
+      default: return new Date(b.storedAt) - new Date(a.storedAt);
+    }
   });
 
   items.forEach((file, index) => {
@@ -355,6 +454,45 @@ function renderFileList(items) {
       ${isFolder ? `<svg class="folder-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>` : ''}
     `;
 
+    // ──── Drag to Move ────
+    item.draggable = true;
+    
+    item.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', file.id);
+      e.dataTransfer.effectAllowed = 'move';
+      item.style.opacity = '0.5';
+    });
+    
+    item.addEventListener('dragend', () => {
+      item.style.opacity = '1';
+    });
+
+    if (isFolder) {
+      item.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        item.classList.add('active'); // highlight folder
+      });
+      item.addEventListener('dragleave', () => {
+        item.classList.remove('active');
+      });
+      item.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        item.classList.remove('active');
+        const draggedId = e.dataTransfer.getData('text/plain');
+        if (draggedId && draggedId !== file.id) {
+          // Check if dragging a folder into its own child
+          const isDesc = isDescendant(file.id, draggedId);
+          if (!isDesc) {
+            itemToMoveId = draggedId;
+            await moveItemTo(file.id);
+          } else {
+            showToast('ย้ายโฟลเดอร์ไม่ได้', 'error');
+          }
+        }
+      });
+    }
+
     item.addEventListener('click', (e) => {
       // Double click or enter folder
       if (isFolder && e.detail === 2) {
@@ -366,6 +504,13 @@ function renderFileList(items) {
 
     fileList.appendChild(item);
   });
+}
+
+function isDescendant(folderId, targetId) {
+  if (folderId === targetId) return true;
+  const folder = allFiles.find(f => f.id === folderId);
+  if (!folder || !folder.parentId) return false;
+  return isDescendant(folder.parentId, targetId);
 }
 
 // ──── Trash / Recycle Bin ────
@@ -626,6 +771,17 @@ function showDetails(file) {
   
   // Prevent moving root if we ever allowed selecting it (we don't, but safety)
   moveBtn.classList.remove('hidden');
+
+  const aiAnalysisWrap = document.getElementById('ai-analysis-wrap');
+  if (aiAnalysisWrap) {
+    if (file.isFolder) {
+      aiAnalysisWrap.style.display = 'none';
+    } else {
+      aiAnalysisWrap.style.display = 'flex';
+      document.getElementById('ai-analyze-text').textContent = 'AI วิเคราะห์เนื้อหา';
+      document.getElementById('ai-analyze-btn').style.opacity = '1';
+    }
+  }
 
   detailsContent.classList.remove('hidden');
   emptyDetails.classList.add('hidden');
@@ -1051,15 +1207,8 @@ function renderMoveFolderList() {
   
   const fileToMove = allFiles.find(f => f.id === itemToMoveId);
   
-  // All folders except the item itself and its descendants
-  function isDescendant(folderId, targetId) {
-    if (folderId === targetId) return true;
-    const folder = allFiles.find(f => f.id === folderId);
-    if (!folder || !folder.parentId) return false;
-    return isDescendant(folder.parentId, targetId);
-  }
-
   const availableFolders = allFiles.filter(f => f.isFolder && !isDescendant(f.id, itemToMoveId));
+
   
   // Root option
   addMoveItem(null, 'หน้าแรก', fileToMove?.parentId === null, true);
@@ -1107,6 +1256,81 @@ async function moveItemTo(targetFolderId) {
   clearSelection();
   showToast(`ย้ายไฟล์สำเร็จ`, 'success');
   await refreshFiles();
+  scheduleAutoSync();
+}
+
+// ──── Sort ────
+function changeSortMode(mode) {
+  currentSortMode = mode;
+  localStorage.setItem('memory-sort-mode', mode);
+  if (isViewingTrash) {
+    renderTrashList();
+  } else {
+    handleSearch();
+  }
+}
+
+// ──── Rename ────
+function showRenameModal() {
+  if (!selectedFileId) return;
+  const file = allFiles.find(f => f.id === selectedFileId);
+  if (!file) return;
+  let modal = document.getElementById('rename-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'rename-modal';
+    modal.className = 'modal-overlay hidden';
+    modal.innerHTML = `
+      <div class="modal">
+        <div class="modal-icon modal-icon-accent">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </div>
+        <h3>เปลี่ยนชื่อ</h3>
+        <div class="modal-input-wrap">
+          <input type="text" id="rename-input" class="modal-input" placeholder="ชื่อใหม่..." autocomplete="off" maxlength="200">
+        </div>
+        <div class="modal-actions">
+          <button class="btn-outline" onclick="hideRenameModal()">ยกเลิก</button>
+          <button class="btn-primary" onclick="confirmRename()">เปลี่ยนชื่อ</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) hideRenameModal(); });
+    document.getElementById('rename-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') confirmRename();
+    });
+  }
+  document.getElementById('rename-input').value = file.name;
+  modal.classList.remove('hidden');
+  setTimeout(() => {
+    const input = document.getElementById('rename-input');
+    input.focus();
+    // เลือกชื่อไฟล์โดยไม่รวมนามสกุล
+    const dotIndex = file.name.lastIndexOf('.');
+    input.setSelectionRange(0, dotIndex > 0 && !file.isFolder ? dotIndex : file.name.length);
+  }, 100);
+}
+
+function hideRenameModal() {
+  const modal = document.getElementById('rename-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function confirmRename() {
+  if (!selectedFileId) return;
+  const input = document.getElementById('rename-input');
+  const newName = input.value.trim();
+  if (!newName) return;
+  const file = await getFile(selectedFileId);
+  if (!file) return;
+  file.name = newName;
+  file.lastModified = new Date().toISOString();
+  await saveFile(file);
+  hideRenameModal();
+  showToast(`เปลี่ยนชื่อเป็น "${newName}" แล้ว`, 'success');
+  await refreshFiles();
+  await selectFile(selectedFileId);
   scheduleAutoSync();
 }
 
@@ -1214,6 +1438,14 @@ function initEvents() {
   deleteBtn.addEventListener('click', showDeleteModal);
   cancelDeleteBtn.addEventListener('click', hideDeleteModal);
   confirmDeleteBtn.addEventListener('click', confirmDeleteFile);
+  
+  // Modals click outside
+  const aiSetupModal = document.getElementById('ai-setup-modal');
+  if (aiSetupModal) {
+    aiSetupModal.addEventListener('click', (e) => {
+      if (e.target === aiSetupModal) hideAiSetupModal();
+    });
+  }
 
   // Close modals on overlay click
   [deleteModal, folderModal, moveModal, gdriveSetupModal].forEach(modal => {
@@ -1264,6 +1496,14 @@ function hideLoadingScreen() {
 // ──── Init ────
 async function init() {
   initTheme();
+
+  // ตั้ง PIN ครั้งแรกอัตโนมัติ
+  if (!localStorage.getItem(PIN_STORAGE_KEY)) {
+    setupPin('031124');
+  }
+  // เช็ค PIN Lock ก่อนแสดงแอป
+  initPinLock();
+
   initEvents();
 
   // Load files from IndexedDB
