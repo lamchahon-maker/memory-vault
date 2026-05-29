@@ -1587,3 +1587,247 @@ body {
 .file-item-pin-icon {
   color: var(--accent); margin-right: 8px; opacity: 0.8;
 }
+
+/* Spotlight Header Button */
+.btn-spotlight {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(139, 124, 248, 0.25);
+  background: rgba(139, 124, 248, 0.08);
+  color: var(--accent);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  position: relative;
+}
+.btn-spotlight:hover {
+  background: rgba(139, 124, 248, 0.18);
+  border-color: rgba(139, 124, 248, 0.4);
+  box-shadow: 0 0 20px rgba(139, 124, 248, 0.25);
+  transform: scale(1.05);
+}
+.btn-spotlight:active {
+  transform: scale(0.95);
+}
+
+/* ========================================
+   Spotlight Omnibar — J.A.R.V.I.S. Style
+   ======================================== */
+.spotlight-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: min(18vh, 160px);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.spotlight-overlay:not(.hidden) {
+  opacity: 1;
+}
+.spotlight-overlay.hidden {
+  pointer-events: none;
+}
+
+.spotlight-container {
+  width: min(640px, 92vw);
+  background: rgba(18, 18, 28, 0.85);
+  border: 1px solid rgba(139, 124, 248, 0.2);
+  border-radius: 20px;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.04),
+    0 25px 60px -12px rgba(0, 0, 0, 0.7),
+    0 0 60px -10px rgba(139, 124, 248, 0.2);
+  overflow: hidden;
+  transform: translateY(-20px) scale(0.97);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+}
+.spotlight-overlay:not(.hidden) .spotlight-container {
+  transform: translateY(0) scale(1);
+}
+
+/* Header / Input Row */
+.spotlight-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.spotlight-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--accent-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 0 20px rgba(139, 124, 248, 0.4);
+  animation: spotlightIconPulse 3s ease-in-out infinite;
+}
+@keyframes spotlightIconPulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(139, 124, 248, 0.4); }
+  50% { box-shadow: 0 0 30px rgba(139, 124, 248, 0.6), 0 0 60px rgba(139, 124, 248, 0.2); }
+}
+
+.spotlight-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 16px;
+  font-weight: 400;
+  caret-color: var(--accent);
+}
+.spotlight-input::placeholder {
+  color: var(--text-tertiary);
+  font-weight: 300;
+}
+
+.spotlight-voice-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+.spotlight-voice-btn:hover {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border-color: rgba(139, 124, 248, 0.3);
+}
+.spotlight-voice-btn.recording {
+  background: rgba(255, 59, 48, 0.15);
+  color: #ff3b30;
+  border-color: rgba(255, 59, 48, 0.4);
+  animation: pulseRecording 1.5s infinite;
+}
+
+.spotlight-kbd {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-tertiary);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+/* Quick Actions */
+.spotlight-actions {
+  padding: 12px 16px 16px;
+}
+.spotlight-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 0 8px 8px;
+}
+
+.spotlight-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+}
+.spotlight-action-btn:hover {
+  background: rgba(139, 124, 248, 0.1);
+}
+.spotlight-action-btn:active {
+  transform: scale(0.98);
+}
+.spotlight-action-icon {
+  font-size: 18px;
+  width: 28px;
+  text-align: center;
+}
+
+/* Response Area */
+.spotlight-response {
+  border-top: 1px solid rgba(255,255,255,0.06);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.spotlight-response-content {
+  padding: 16px 20px;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.spotlight-response-content strong {
+  color: var(--accent-hover);
+}
+
+/* Thinking animation inside Spotlight */
+.spotlight-thinking {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 20px;
+  justify-content: center;
+}
+.spotlight-thinking span {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: spotlightDot 1.2s ease-in-out infinite;
+}
+.spotlight-thinking span:nth-child(2) { animation-delay: 0.15s; }
+.spotlight-thinking span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes spotlightDot {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.2); }
+}
+
+/* Mobile adjustments */
+@media (max-width: 600px) {
+  .spotlight-overlay {
+    padding-top: 10vh;
+  }
+  .spotlight-container {
+    border-radius: 16px;
+  }
+  .spotlight-input {
+    font-size: 15px;
+  }
+  .spotlight-kbd {
+    display: none;
+  }
+}

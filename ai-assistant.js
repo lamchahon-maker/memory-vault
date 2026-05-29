@@ -487,7 +487,7 @@ async function executeAiTool(toolName, args) {
 
 // ──── Call Groq API ────
 async function callGroq(userMessage) {
-  if (!groqApiKey) throw new Error('ยังไม่ได้ตั้งค่า Groq API Key');
+  if (!groqApiKey && !customEndpoint) throw new Error('ยังไม่ได้ตั้งค่า API Key หรือ Custom Endpoint');
 
   const fileIndex = buildFileIndex();
   const folderTree = buildFolderTree();
@@ -547,9 +547,9 @@ ${JSON.stringify(folderTree.slice(0, 50), null, 0)}`;
   let targetUrl = 'https://api.groq.com/openai/v1/chat/completions';
   let useCorsProxy = true;
 
-  // Auto-detect OpenRouter API key for Claude 3.5 Haiku
+  // Auto-detect OpenRouter API key
   if (groqApiKey.startsWith('sk-or-')) {
-    modelName = 'anthropic/claude-3-5-haiku';
+    modelName = customModel || 'google/gemini-2.5-flash:free';
     targetUrl = 'https://openrouter.ai/api/v1/chat/completions';
     useCorsProxy = false; // OpenRouter supports CORS natively
   }
@@ -894,3 +894,147 @@ function startVoiceSearch() {
 
   recognition.start();
 }
+
+// ========================================
+// Spotlight Omnibar — J.A.R.V.I.S. Mode
+// ========================================
+
+function openSpotlight() {
+  const overlay = document.getElementById('spotlight-overlay');
+  const input = document.getElementById('spotlight-input');
+  const actions = document.getElementById('spotlight-actions');
+  const response = document.getElementById('spotlight-response');
+  if (!overlay) return;
+
+  // Reset state
+  if (input) input.value = '';
+  if (actions) actions.classList.remove('hidden');
+  if (response) {
+    response.classList.add('hidden');
+    document.getElementById('spotlight-response-content').innerHTML = '';
+  }
+
+  overlay.classList.remove('hidden');
+  setTimeout(() => { if (input) input.focus(); }, 100);
+}
+
+function closeSpotlight() {
+  const overlay = document.getElementById('spotlight-overlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+function closeSpotlightOnOverlay(e) {
+  if (e.target === e.currentTarget) closeSpotlight();
+}
+
+function handleSpotlightKeyPress(e) {
+  if (e.key === 'Escape') {
+    closeSpotlight();
+  } else if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendSpotlightCommand();
+  }
+}
+
+async function sendSpotlightCommand() {
+  const input = document.getElementById('spotlight-input');
+  if (!input) return;
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  if (!isAiConfigured()) {
+    closeSpotlight();
+    showAiSetupModal();
+    showToast('กรุณาตั้งค่า API Key ก่อนใช้งาน Spotlight', 'error');
+    return;
+  }
+
+  // Hide actions, show response area with thinking
+  const actions = document.getElementById('spotlight-actions');
+  const response = document.getElementById('spotlight-response');
+  const content = document.getElementById('spotlight-response-content');
+
+  if (actions) actions.classList.add('hidden');
+  if (response) response.classList.remove('hidden');
+  if (content) content.innerHTML = '<div class="spotlight-thinking"><span></span><span></span><span></span></div>';
+
+  try {
+    const reply = await callGroq(msg);
+    // Format response
+    if (content) {
+      content.innerHTML = reply
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n/g, '<br>');
+    }
+    // Also push to chat history
+    aiChatHistory.push({ role: 'user', text: msg });
+    aiChatHistory.push({ role: 'model', text: reply });
+  } catch (err) {
+    if (content) content.innerHTML = `<span style="color:var(--danger)">❌ ${err.message}</span>`;
+  }
+}
+
+function spotlightQuickAction(command) {
+  const input = document.getElementById('spotlight-input');
+  if (input) input.value = command;
+  sendSpotlightCommand();
+}
+
+function startSpotlightVoice() {
+  const btn = document.getElementById('spotlight-voice-btn');
+  const input = document.getElementById('spotlight-input');
+
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    showToast('เบราว์เซอร์นี้ไม่รองรับการสั่งด้วยเสียง', 'error');
+    return;
+  }
+
+  if (btn.classList.contains('recording')) {
+    if (recognition) recognition.stop();
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  recognition.lang = 'th-TH';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = function() {
+    btn.classList.add('recording');
+    input.placeholder = '🎙️ กำลังฟัง...';
+  };
+
+  recognition.onresult = function(event) {
+    const transcript = event.results[0][0].transcript;
+    input.value = transcript;
+    setTimeout(() => sendSpotlightCommand(), 300);
+  };
+
+  recognition.onerror = function() {
+    btn.classList.remove('recording');
+    input.placeholder = 'สั่งงาน Jarvis...';
+  };
+
+  recognition.onend = function() {
+    btn.classList.remove('recording');
+    input.placeholder = 'สั่งงาน Jarvis...';
+  };
+
+  recognition.start();
+}
+
+// ──── Global Keyboard Shortcut: Ctrl + Space ────
+document.addEventListener('keydown', function(e) {
+  // Ctrl + Space (or Cmd + Space on Mac)
+  if ((e.ctrlKey || e.metaKey) && e.code === 'Space') {
+    e.preventDefault();
+    const overlay = document.getElementById('spotlight-overlay');
+    if (overlay && !overlay.classList.contains('hidden')) {
+      closeSpotlight();
+    } else {
+      openSpotlight();
+    }
+  }
+});
