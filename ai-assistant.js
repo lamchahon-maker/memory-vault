@@ -668,7 +668,7 @@ ${JSON.stringify(folderTree)}
 
 เวลาปัจจุบัน: ${new Date().toLocaleString('th-TH')}`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
 
   const contents = [];
   for (const msg of aiChatHistory) {
