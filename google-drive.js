@@ -179,9 +179,21 @@ function handleAuthResponse(resp) {
 
 async function fetchUserInfo() {
   try {
+    const token = gapi.client.getToken();
+    if (!token) return;
+
     const resp = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${gapi.client.getToken().access_token}` }
+      headers: { Authorization: `Bearer ${token.access_token}` }
     });
+
+    if (!resp.ok) {
+      if (resp.status === 401) {
+        console.warn('Google Drive token expired. Signing out.');
+        signOutDrive();
+      }
+      throw new Error(`HTTP ${resp.status}`);
+    }
+
     const data = await resp.json();
     gdriveUser = {
       name: data.name || data.email || 'Google User',
@@ -190,7 +202,6 @@ async function fetchUserInfo() {
     };
 
     // Update saved token with user name
-    const token = gapi.client.getToken();
     token.userName = gdriveUser.name;
     localStorage.setItem('memory-gdrive-token', JSON.stringify(token));
 
