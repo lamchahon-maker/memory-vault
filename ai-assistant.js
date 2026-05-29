@@ -10,8 +10,8 @@ const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const GEMINI_MODEL = 'gemini-2.5-flash';
 
 // API Key จะถูกเก็บใน localStorage เท่านั้น — ไม่มี hardcode ใน source code
-let groqApiKey = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.GROQ_API_KEY) ? APP_CONFIG.GROQ_API_KEY : (localStorage.getItem(AI_STORAGE_KEY) || '');
-let geminiApiKey = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.GEMINI_API_KEY) ? APP_CONFIG.GEMINI_API_KEY : (localStorage.getItem(GEMINI_STORAGE_KEY) || '');
+let groqApiKey = ((typeof APP_CONFIG !== 'undefined' && APP_CONFIG.GROQ_API_KEY) ? APP_CONFIG.GROQ_API_KEY : (localStorage.getItem(AI_STORAGE_KEY) || '')).trim();
+let geminiApiKey = ((typeof APP_CONFIG !== 'undefined' && APP_CONFIG.GEMINI_API_KEY) ? APP_CONFIG.GEMINI_API_KEY : (localStorage.getItem(GEMINI_STORAGE_KEY) || '')).trim();
 let aiChatHistory = [];
 let isAiThinking = false;
 
@@ -475,6 +475,11 @@ async function callGroq(userMessage) {
   const fileIndex = buildFileIndex();
   const folderTree = buildFolderTree();
 
+  // Truncate to prevent payload size from exceeding Groq API limits (ERR_FAILED)
+  const maxFiles = 150;
+  let fileIndexString = JSON.stringify(fileIndex.slice(0, maxFiles), null, 0);
+  if (fileIndex.length > maxFiles) fileIndexString += `\n... (มีไฟล์อีก ${fileIndex.length - maxFiles} ไฟล์ที่ถูกซ่อนไว้)`;
+
   const systemInstruction = `คุณคือ "Memory AI" — ผู้ช่วยอัจฉริยะประจำแอปเก็บไฟล์ส่วนตัวชื่อ Memory
 คุณมีหน้าที่ช่วยผู้ใช้ค้นหา จัดการ และทำความเข้าใจไฟล์ที่เก็บไว้ในระบบ
 
@@ -491,11 +496,11 @@ async function callGroq(userMessage) {
 - โฟลเดอร์ที่กำลังเปิดอยู่: ${currentFolderId || 'หน้าแรก (root)'}
 - จำนวนไฟล์ทั้งหมด: ${fileIndex.length}
 
-รายการไฟล์ทั้งหมดในระบบ:
-${JSON.stringify(fileIndex, null, 0)}
+รายการไฟล์ทั้งหมดในระบบ (สูงสุด ${maxFiles} ไฟล์ล่าสุด):
+${fileIndexString}
 
 โครงสร้างโฟลเดอร์:
-${JSON.stringify(folderTree, null, 0)}`;
+${JSON.stringify(folderTree.slice(0, 50), null, 0)}`;
 
   // Build messages array
   const messages = [

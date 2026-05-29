@@ -1,4 +1,4 @@
-const CACHE_NAME = 'memory-vault-v12';
+const CACHE_NAME = 'memory-vault-v13';
 const ASSETS = [
   './',
   './index.html',
@@ -36,10 +36,21 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Try network first, fallback to cache
+  // Do not intercept API calls or non-GET requests (like Groq/Gemini POST requests)
+  if (event.request.method !== 'GET' || event.request.url.includes('api.groq.com') || event.request.url.includes('googleapis.com')) {
+    return;
+  }
+
+  // Try network first, fallback to cache for static assets
   event.respondWith(
     fetch(event.request).catch(() => {
-      return caches.match(event.request);
+      return caches.match(event.request).then((response) => {
+        if (response) {
+          return response;
+        }
+        // If not found in cache, return a generic offline response or just let it fail
+        return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
+      });
     })
   );
 });
