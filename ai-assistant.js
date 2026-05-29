@@ -68,6 +68,9 @@ function buildFileIndex() {
     if (f.aiDescription) info.aiDescription = f.aiDescription;
     // Add text snippet for code/text files (first 200 chars)
     if (f.textContent) info.textSnippet = f.textContent.substring(0, 300);
+    // Add tags and pin status
+    info.tags = f.tags || [];
+    info.isPinned = !!f.isPinned;
     return info;
   });
 }
@@ -127,7 +130,7 @@ const AI_TOOLS = [
   },
   {
     name: 'create_text_file',
-    description: 'สร้างไฟล์ข้อความใหม่ (txt, md, html, css, js, json, csv ฯลฯ) พร้อมเขียนเนื้อหาลงไป',
+    description: 'สร้างไฟล์ข้อความใหม่ (txt, md, html, css, js, json, csv ฯลฯ) พร้อมเขียนเนื้อหาลงไป เช่น เมื่อผู้ใช้บอกให้ "จด: ..."',
     parameters: {
       type: 'object',
       properties: {
@@ -135,6 +138,52 @@ const AI_TOOLS = [
         content: { type: 'string', description: 'เนื้อหาที่ต้องการเขียนลงในไฟล์' },
       },
       required: ['fileName', 'content'],
+    },
+  },
+  {
+    name: 'add_tag',
+    description: 'เพิ่มแท็กให้กับไฟล์',
+    parameters: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'ID ของไฟล์' },
+        tag: { type: 'string', description: 'ชื่อแท็ก (ไม่ต้องมี #)' },
+      },
+      required: ['fileId', 'tag'],
+    },
+  },
+  {
+    name: 'remove_tag',
+    description: 'ลบแท็กออกจากไฟล์',
+    parameters: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'ID ของไฟล์' },
+        tag: { type: 'string', description: 'ชื่อแท็ก (ไม่ต้องมี #)' },
+      },
+      required: ['fileId', 'tag'],
+    },
+  },
+  {
+    name: 'pin_file',
+    description: 'ปักหมุดไฟล์',
+    parameters: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'ID ของไฟล์' },
+      },
+      required: ['fileId'],
+    },
+  },
+  {
+    name: 'unpin_file',
+    description: 'ยกเลิกปักหมุดไฟล์',
+    parameters: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'ID ของไฟล์' },
+      },
+      required: ['fileId'],
     },
   },
   {
@@ -204,12 +253,21 @@ async function executeAiTool(toolName, args) {
     case 'search_and_filter_files': {
       const { keyword, fileType } = args;
       // Set the type filter dropdown
-      if (fileType && fileType !== 'all') {
-        const filterEl = document.getElementById('type-filter');
-        if (filterEl) filterEl.value = fileType;
-      } else {
-        const filterEl = document.getElementById('type-filter');
-        if (filterEl) filterEl.value = 'all';
+      const targetType = (fileType && fileType !== 'all') ? fileType : 'all';
+      const filterEl = document.getElementById('type-filter');
+      if (filterEl) filterEl.value = targetType;
+      
+      // Update custom UI
+      const optionBtn = document.querySelector(`.custom-filter-option[data-value="${targetType}"]`);
+      if (optionBtn) {
+        document.querySelectorAll('.custom-filter-option').forEach(opt => opt.classList.remove('active'));
+        optionBtn.classList.add('active');
+        const text = optionBtn.querySelector('span').textContent;
+        const svg = optionBtn.querySelector('svg');
+        const textEl = document.getElementById('custom-filter-text');
+        const iconEl = document.getElementById('custom-filter-icon');
+        if (textEl) textEl.textContent = text;
+        if (iconEl && svg) iconEl.innerHTML = svg.outerHTML;
       }
       // Set search input
       const searchEl = document.getElementById('search-input');
@@ -370,7 +428,43 @@ async function executeAiTool(toolName, args) {
       const fileToRestore = allFiles.find(f => f.id === fileId && f.inTrash);
       if (!fileToRestore) return { success: false, message: 'ไม่พบไฟล์นี้ในถังขยะ' };
       await handleRestoreFile(fileId);
-      return { success: true, message: `กู้คืน "${fileToRestore.name}" สำเร็จแล้ว` };
+      return { success: true, message: `กู้คืน "${fileToRestore.name}" สำเร็จ` };
+    }
+
+    case 'add_tag': {
+      const { fileId, tag } = args;
+      if (typeof addTag !== 'function') return { success: false, message: 'addTag not available' };
+      await addTag(fileId, tag);
+      return { success: true, message: `เพิ่มแท็ก #${tag} ให้ไฟล์แล้ว` };
+    }
+
+    case 'remove_tag': {
+      const { fileId, tag } = args;
+      if (typeof removeTag !== 'function') return { success: false, message: 'removeTag not available' };
+      await removeTag(fileId, tag);
+      return { success: true, message: `ลบแท็ก #${tag} ออกจากไฟล์แล้ว` };
+    }
+
+    case 'pin_file': {
+      const { fileId } = args;
+      const file = await getFile(fileId);
+      if (!file) return { success: false, message: 'ไม่พบไฟล์' };
+      file.isPinned = true;
+      file.lastModified = new Date().toISOString();
+      await saveFile(file);
+      await refreshFiles();
+      return { success: true, message: `ปักหมุดไฟล์ "${file.name}" แล้ว` };
+    }
+
+    case 'unpin_file': {
+      const { fileId } = args;
+      const file = await getFile(fileId);
+      if (!file) return { success: false, message: 'ไม่พบไฟล์' };
+      file.isPinned = false;
+      file.lastModified = new Date().toISOString();
+      await saveFile(file);
+      await refreshFiles();
+      return { success: true, message: `เลิกปักหมุดไฟล์ "${file.name}" แล้ว` };
     }
 
     default:
@@ -704,4 +798,56 @@ async function analyzeFileWithGemini() {
     btn.style.opacity = '1';
     txt.textContent = 'AI วิเคราะห์เนื้อหา';
   }
+}
+
+// ──── Voice Search ────
+let recognition = null;
+function startVoiceSearch() {
+  const btn = document.getElementById('ai-voice-btn');
+  const input = document.getElementById('ai-chat-input');
+  
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    showToast('เบราว์เซอร์นี้ไม่รองรับการค้นหาด้วยเสียง', 'error');
+    return;
+  }
+  
+  if (btn.classList.contains('recording')) {
+    if (recognition) recognition.stop();
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  recognition.lang = 'th-TH'; // รองรับภาษาไทย
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = function() {
+    btn.classList.add('recording');
+    input.placeholder = 'กำลังฟัง...';
+  };
+
+  recognition.onresult = function(event) {
+    const transcript = event.results[0][0].transcript;
+    input.value = transcript;
+    
+    // Auto send
+    setTimeout(() => {
+      handleAiSend();
+    }, 500);
+  };
+
+  recognition.onerror = function(event) {
+    console.error("Speech recognition error", event.error);
+    showToast('เกิดข้อผิดพลาดในการรับเสียง', 'error');
+    btn.classList.remove('recording');
+    input.placeholder = 'พิมพ์ข้อความ...';
+  };
+
+  recognition.onend = function() {
+    btn.classList.remove('recording');
+    input.placeholder = 'พิมพ์ข้อความ...';
+  };
+
+  recognition.start();
 }

@@ -3,6 +3,14 @@
    App Logic: IndexedDB, Preview, UI
    ======================================== */
 
+// ──── Utils ────
+function escapeHTML(str) {
+  if (!str) return '';
+  return String(str).replace(/[&<>'"]/g, tag => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  }[tag]));
+}
+
 // ──── IndexedDB Setup ────
 const DB_NAME = 'MemoryVault';
 const DB_VERSION = 1;
@@ -283,6 +291,11 @@ const uploadBtn = $('#upload-btn');
 const themeToggle = $('#theme-toggle');
 const searchInput = $('#search-input');
 const typeFilter = $('#type-filter');
+const customFilterBtn = $('#custom-filter-btn');
+const customFilterMenu = $('#custom-filter-menu');
+const customFilterText = $('#custom-filter-text');
+const customFilterIcon = $('#custom-filter-icon');
+const customFilterOptions = $$('.custom-filter-option');
 const fileList = $('#file-list');
 const fileCount = $('#file-count');
 const breadcrumbItems = $('#breadcrumb-items');
@@ -382,7 +395,7 @@ function renderBreadcrumbs() {
       btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
         <polyline points="9 22 9 12 15 12 15 22"/>
-      </svg>${item.name}`;
+      </svg>${escapeHTML(item.name)}`;
     } else {
       btn.textContent = item.name;
     }
@@ -418,8 +431,10 @@ function renderFileList(items) {
     fileList.classList.remove('hidden');
   }
 
-  // Sort: Folders first, then files by selected mode
+  // Sort: Pinned first, then Folders, then files by selected mode
   items.sort((a, b) => {
+    if (a.isPinned && !b.isPinned) return -1;
+    if (!a.isPinned && b.isPinned) return 1;
     if (a.isFolder && !b.isFolder) return -1;
     if (!a.isFolder && b.isFolder) return 1;
     switch (currentSortMode) {
@@ -440,7 +455,7 @@ function renderFileList(items) {
     const cat = isFolder ? 'folder' : getFileCategory(ext);
     
     const item = document.createElement('div');
-    item.className = `file-item${file.id === selectedFileId ? ' active' : ''}`;
+    item.className = `file-item${file.id === selectedFileId ? ' active' : ''}${file.isPinned ? ' pinned' : ''}`;
     item.setAttribute('data-id', file.id);
     item.style.animationDelay = `${index * 0.03}s`;
 
@@ -453,11 +468,20 @@ function renderFileList(items) {
       iconHtml = ext || '?';
     }
 
+    let tagsHtml = '';
+    if (file.tags && file.tags.length > 0) {
+      tagsHtml = `<div class="file-item-tags">${file.tags.map(t => `<span class="tag">#${escapeHTML(t)}</span>`).join('')}</div>`;
+    }
+
     item.innerHTML = `
       <div class="file-item-icon ${cat}">${iconHtml}</div>
       <div class="file-item-info">
-        <div class="file-item-name" title="${safeName}">${safeName}</div>
+        <div class="file-item-name" title="${escapeHTML(safeName)}">
+          ${file.isPinned ? `<svg class="file-item-pin-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>` : ''}
+          ${escapeHTML(safeName)}
+        </div>
         <div class="file-item-meta">${isFolder ? 'โฟลเดอร์' : formatFileSize(file.size)}</div>
+        ${tagsHtml}
       </div>
       ${isFolder ? `<svg class="folder-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>` : ''}
     `;
@@ -650,7 +674,7 @@ function renderTrashList() {
     item.innerHTML = `
       <div class="file-item-icon ${cat}" style="opacity:0.5">${iconHtml}</div>
       <div class="file-item-info">
-        <div class="file-item-name" title="${file.name}">${file.name}</div>
+        <div class="file-item-name" title="${escapeHTML(file.name)}">${escapeHTML(file.name)}</div>
         <div class="file-item-meta" style="color:var(--accent)">${remaining}</div>
       </div>
       <div class="trash-actions">
@@ -712,7 +736,18 @@ function handleSearch() {
   const results = pool.filter(f => {
     // 1. Text Query Match
     const safeName = f.name || '';
-    const matchQuery = !query || safeName.toLowerCase().includes(query);
+    
+    // Check if query matches a tag explicitly
+    let matchQuery = false;
+    if (!query) {
+      matchQuery = true;
+    } else if (query.startsWith('#') && query.length > 1) {
+      const tagQuery = query.substring(1);
+      matchQuery = f.tags && f.tags.some(t => t.toLowerCase().includes(tagQuery));
+    } else {
+      // Normal search matches name or tags
+      matchQuery = safeName.toLowerCase().includes(query) || (f.tags && f.tags.some(t => t.toLowerCase().includes(query)));
+    }
     
     // 2. Type Match
     let matchType = true;
@@ -819,6 +854,81 @@ function showDetails(file) {
   $('#detail-date').textContent = formatDate(file.storedAt);
   $('#detail-modified').textContent = file.lastModified ? formatDate(file.lastModified) : '—';
   $('#detail-ext').textContent = file.isFolder ? '—' : (ext ? `.${ext}` : 'ไม่มีนามสกุล');
+
+  // Tags
+  renderTags(file);
+
+  // Pin Status
+  const pinText = document.getElementById('pin-text');
+  if (pinText) {
+    pinText.textContent = file.isPinned ? 'เลิกปักหมุด' : 'ปักหมุด';
+  }
+}
+
+// ──── Tags & Pins ────
+function renderTags(file) {
+  const tagsContainer = document.getElementById('detail-tags');
+  if (!tagsContainer) return;
+  tagsContainer.innerHTML = '';
+  
+  if (file.tags && file.tags.length > 0) {
+    file.tags.forEach(tag => {
+      const tagEl = document.createElement('span');
+      tagEl.className = 'tag';
+      tagEl.innerHTML = `#${escapeHTML(tag)} <span class="tag-remove" onclick="removeTag('${file.id}', '${escapeHTML(tag)}')">×</span>`;
+      tagsContainer.appendChild(tagEl);
+    });
+  } else {
+    tagsContainer.innerHTML = '<span style="font-size: 12px; color: var(--text-tertiary);">ไม่มีแท็ก</span>';
+  }
+}
+
+async function addTag(fileId, tag) {
+  if (!tag) return;
+  const cleanTag = tag.trim().replace(/^#/, ''); // Remove # if user typed it
+  if (!cleanTag) return;
+  
+  const file = await getFile(fileId);
+  if (!file) return;
+  
+  if (!file.tags) file.tags = [];
+  if (!file.tags.includes(cleanTag)) {
+    file.tags.push(cleanTag);
+    file.lastModified = new Date().toISOString();
+    await saveFile(file);
+    await refreshFiles();
+    if (selectedFileId === file.id) renderTags(file);
+    scheduleAutoSync();
+  }
+}
+
+async function removeTag(fileId, tag) {
+  const file = await getFile(fileId);
+  if (!file || !file.tags) return;
+  
+  file.tags = file.tags.filter(t => t !== tag);
+  file.lastModified = new Date().toISOString();
+  await saveFile(file);
+  await refreshFiles();
+  if (selectedFileId === file.id) renderTags(file);
+  scheduleAutoSync();
+}
+
+async function togglePinFile() {
+  if (!selectedFileId) return;
+  const file = await getFile(selectedFileId);
+  if (!file) return;
+  
+  file.isPinned = !file.isPinned;
+  file.lastModified = new Date().toISOString();
+  await saveFile(file);
+  await refreshFiles();
+  
+  if (selectedFileId === file.id) {
+    const pinText = document.getElementById('pin-text');
+    if (pinText) pinText.textContent = file.isPinned ? 'เลิกปักหมุด' : 'ปักหมุด';
+  }
+  scheduleAutoSync();
 }
 
 async function showPreview(file) {
@@ -831,10 +941,10 @@ async function showPreview(file) {
       <div class="empty-state-preview">
         <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" opacity="0.4" style="color: #f59e0b">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-        </svg>
-        <h3 style="margin-top: 16px;">${file.name}</h3>
-        <p>ดับเบิ้ลคลิกเพื่อเปิดโฟลเดอร์</p>
-        <button class="btn-primary" style="margin-top: 16px;" onclick="navigateToFolder('${file.id}', '${file.name}')">เปิดโฟลเดอร์</button>
+      </svg>
+      <h3>${escapeHTML(file.name)}</h3>
+      <p>นี่คือโฟลเดอร์ — ดับเบิลคลิกที่รายการในรายการเพื่อเข้าไปข้างใน</p>
+        <button class="btn-primary" style="margin-top: 16px;" onclick="navigateToFolder('${file.id}', '${escapeHTML(file.name)}')">เปิดโฟลเดอร์</button>
       </div>
     `;
     return;
@@ -1116,7 +1226,7 @@ async function showPreview(file) {
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
         <polyline points="14 2 14 8 20 8"/>
       </svg>
-      <h3>${file.name}</h3>
+      <h3>${escapeHTML(file.name)}</h3>
       <p>ไม่สามารถแสดงตัวอย่างไฟล์นี้ได้ — กดดาวน์โหลดเพื่อเปิดไฟล์</p>
     </div>
   `;
@@ -1373,7 +1483,7 @@ function addMoveItem(id, name, isCurrentLocation, isRoot) {
 
   item.innerHTML = `
     ${icon}
-    <span>${name}</span>
+    <span>${escapeHTML(name)}</span>
     ${isCurrentLocation ? `<span style="margin-left: auto; font-size: 0.75rem; color: var(--text-tertiary);">(ที่อยู่ปัจจุบัน)</span>` : ''}
   `;
 
@@ -1568,6 +1678,51 @@ function initEvents() {
   searchInput.addEventListener('input', handleSearch);
   typeFilter.addEventListener('change', handleSearch);
 
+  // Custom Dropdown Logic
+  if (customFilterBtn) {
+    customFilterBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const parent = customFilterBtn.parentElement;
+      parent.classList.toggle('open');
+      customFilterMenu.classList.toggle('hidden');
+    });
+
+    customFilterOptions.forEach(option => {
+      option.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Update active class
+        customFilterOptions.forEach(opt => opt.classList.remove('active'));
+        option.classList.add('active');
+
+        // Update button UI
+        const value = option.dataset.value;
+        const text = option.querySelector('span').textContent;
+        const svg = option.querySelector('svg');
+        
+        customFilterText.textContent = text;
+        if (svg && customFilterIcon) {
+          customFilterIcon.innerHTML = svg.outerHTML;
+        }
+
+        // Close menu
+        customFilterBtn.parentElement.classList.remove('open');
+        customFilterMenu.classList.add('hidden');
+
+        // Update hidden select and trigger search
+        typeFilter.value = value;
+        handleSearch();
+      });
+    });
+
+    // Close when clicking outside
+    document.addEventListener('click', (e) => {
+      if (customFilterBtn.parentElement && !customFilterBtn.parentElement.contains(e.target)) {
+        customFilterBtn.parentElement.classList.remove('open');
+        if (customFilterMenu) customFilterMenu.classList.add('hidden');
+      }
+    });
+  }
+
   // Close details
   closeDetailsBtn.addEventListener('click', clearSelection);
 
@@ -1637,6 +1792,28 @@ function hideLoadingScreen() {
   });
 }
 
+// ──── Sanitize stored file names (one-time cleanup) ────
+async function sanitizeFileNames() {
+  const SANITIZE_KEY = 'memory-names-sanitized-v1';
+  if (localStorage.getItem(SANITIZE_KEY)) return; // Already done
+
+  const files = await getAllFiles();
+  let fixed = 0;
+  for (const file of files) {
+    if (file.name && /<[^>]+>/.test(file.name)) {
+      // Strip ALL HTML tags from the name
+      const cleaned = file.name.replace(/<[^>]+>/g, '').trim();
+      file.name = cleaned || 'โฟลเดอร์';
+      await saveFile(file);
+      fixed++;
+    }
+  }
+  if (fixed > 0) {
+    console.log(`Sanitized ${fixed} file names (removed HTML tags)`);
+  }
+  localStorage.setItem(SANITIZE_KEY, '1');
+}
+
 // ──── Init ────
 async function init() {
   initTheme();
@@ -1655,6 +1832,9 @@ async function init() {
   if (sortSelect) {
     sortSelect.value = currentSortMode;
   }
+
+  // Sanitize any corrupted file names (strips HTML tags)
+  await sanitizeFileNames();
 
   // Load files from IndexedDB
   await refreshFiles();
