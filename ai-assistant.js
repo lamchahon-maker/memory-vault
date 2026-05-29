@@ -679,10 +679,26 @@ ${JSON.stringify(folderTree)}
   }
   contents.push({ role: 'user', parts: [{ text: userMessage }] });
 
+  // Convert tool types to uppercase for Gemini API
+  const geminiTools = JSON.parse(JSON.stringify(AI_TOOLS));
+  const convertTypes = (obj) => {
+    if (!obj || typeof obj !== 'object') return;
+    if (obj.type && typeof obj.type === 'string') {
+      obj.type = obj.type.toUpperCase();
+    }
+    if (obj.properties) {
+      for (const key in obj.properties) convertTypes(obj.properties[key]);
+    }
+    if (obj.items) convertTypes(obj.items);
+  };
+  geminiTools.forEach(t => {
+    if (t.parameters) convertTypes(t.parameters);
+  });
+
   const body = {
     systemInstruction: { parts: [{ text: systemInstructionText }] },
     contents: contents,
-    tools: [{ functionDeclarations: AI_TOOLS }]
+    tools: [{ functionDeclarations: geminiTools }]
   };
 
   const res = await fetch(url, {
