@@ -534,7 +534,9 @@ ${JSON.stringify(folderTree.slice(0, 50), null, 0)}`;
     max_tokens: 1024,
   };
 
-  const url = `https://api.groq.com/openai/v1/chat/completions`;
+  // Use CORS proxy to bypass Groq's strict browser CORS policy
+  const targetUrl = 'https://api.groq.com/openai/v1/chat/completions';
+  const url = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
 
   const res = await fetch(url, {
     method: 'POST',
