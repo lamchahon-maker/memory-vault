@@ -493,13 +493,23 @@
       </div>
       <h3>ตั้งค่า AI Assistant</h3>
       <p style="text-align: left; margin-bottom: 16px; line-height: 1.6;">
-        ใส่ API Keys เพื่อใช้งานฟีเจอร์ AI (ข้อมูลเก็บในเครื่องเท่านั้น)<br>
-        • <strong>Groq API:</strong> สำหรับแชท ค้นหา ย้าย สร้างไฟล์ (เร็วมาก)<br>
-        • <strong>Gemini API:</strong> สำหรับอ่านเนื้อหาไฟล์และวิเคราะห์รูปภาพ
+        ใส่ API Keys เพื่อเปิดใช้งานผู้ช่วย AI (คีย์จะถูกเก็บไว้ในเครื่องคุณเท่านั้น)<br>
+          <strong>Groq / OpenRouter:</strong> ใส่คีย์ (gsk_... หรือ sk-or-...)<br>
+          <strong>Local AI (Ollama/LM Studio):</strong> ปล่อยช่องคีย์ว่างไว้ แล้วใส่ Endpoint URL ด้านล่าง
       </p>
       <div class="modal-input-wrap">
-        <label class="modal-input-label">Groq API Key (gsk_...)</label>
-        <input type="text" id="groq-api-key-input" class="modal-input" placeholder="gsk_..." autocomplete="off">
+        <label class="modal-input-label">Groq หรือ OpenRouter API Key (เว้นว่างถ้าใช้ Local)</label>
+        <input type="text" id="groq-api-key-input" class="modal-input" placeholder="gsk_... หรือ sk-or-..." autocomplete="off">
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <div class="modal-input-wrap" style="flex: 2;">
+          <label class="modal-input-label">Custom Endpoint URL (สำหรับ Local AI)</label>
+          <input type="text" id="ai-endpoint-input" class="modal-input" placeholder="เช่น http://localhost:11434/v1/chat/completions" autocomplete="off">
+        </div>
+        <div class="modal-input-wrap" style="flex: 1;">
+          <label class="modal-input-label">Model Name</label>
+          <input type="text" id="ai-model-input" class="modal-input" placeholder="qwen2.5:7b" autocomplete="off">
+        </div>
       </div>
       <div class="modal-input-wrap">
         <label class="modal-input-label">Gemini API Key (AIzaSy...)</label>
@@ -575,7 +585,7 @@
   </div>
   <script src="config.js"></script>
   <script src="google-drive.js?v=2"></script>
-  <script src="ai-assistant.js?v=4"></script>
+  <script src="ai-assistant.js?v=6"></script>
   <script src="app.js?v=4"></script>
 </body>
 </html>

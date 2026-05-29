@@ -12,6 +12,8 @@ const GEMINI_MODEL = 'gemini-2.5-flash';
 // API Key จะถูกเก็บใน localStorage เท่านั้น — ไม่มี hardcode ใน source code
 let groqApiKey = ((typeof APP_CONFIG !== 'undefined' && APP_CONFIG.GROQ_API_KEY) ? APP_CONFIG.GROQ_API_KEY : (localStorage.getItem(AI_STORAGE_KEY) || '')).trim();
 let geminiApiKey = ((typeof APP_CONFIG !== 'undefined' && APP_CONFIG.GEMINI_API_KEY) ? APP_CONFIG.GEMINI_API_KEY : (localStorage.getItem(GEMINI_STORAGE_KEY) || '')).trim();
+let customEndpoint = (localStorage.getItem('memory-ai-endpoint') || '').trim();
+let customModel = (localStorage.getItem('memory-ai-model') || '').trim();
 let aiChatHistory = [];
 let isAiThinking = false;
 
@@ -19,6 +21,13 @@ let isAiThinking = false;
 function showAiSetupModal() {
   document.getElementById('groq-api-key-input').value = groqApiKey;
   document.getElementById('gemini-api-key-input').value = geminiApiKey;
+  
+  const endpointInput = document.getElementById('ai-endpoint-input');
+  if (endpointInput) endpointInput.value = customEndpoint;
+  
+  const modelInput = document.getElementById('ai-model-input');
+  if (modelInput) modelInput.value = customModel;
+
   document.getElementById('ai-setup-modal').classList.remove('hidden');
 }
 
@@ -30,11 +39,19 @@ function saveAiSetup() {
   const gKey = document.getElementById('groq-api-key-input').value.trim();
   const gemKey = document.getElementById('gemini-api-key-input').value.trim();
   
+  const endpointInput = document.getElementById('ai-endpoint-input');
+  const modelInput = document.getElementById('ai-model-input');
+  
+  customEndpoint = endpointInput ? endpointInput.value.trim() : '';
+  customModel = modelInput ? modelInput.value.trim() : '';
+  
   groqApiKey = gKey;
   geminiApiKey = gemKey;
   
   localStorage.setItem(AI_STORAGE_KEY, groqApiKey);
   localStorage.setItem(GEMINI_STORAGE_KEY, geminiApiKey);
+  localStorage.setItem('memory-ai-endpoint', customEndpoint);
+  localStorage.setItem('memory-ai-model', customModel);
   
   hideAiSetupModal();
   showToast('บันทึกการตั้งค่า AI สำเร็จ', 'success');
@@ -43,7 +60,7 @@ function saveAiSetup() {
 }
 
 function isAiConfigured() {
-  return !!groqApiKey;
+  return !!groqApiKey || !!customEndpoint;
 }
 
 // ──── Build File Index for AI ────
@@ -526,24 +543,50 @@ ${JSON.stringify(folderTree.slice(0, 50), null, 0)}`;
     }
   }));
 
+  let modelName = 'llama-3.3-70b-versatile';
+  let targetUrl = 'https://api.groq.com/openai/v1/chat/completions';
+  let useCorsProxy = true;
+
+  // Auto-detect OpenRouter API key for Claude 3.5 Haiku
+  if (groqApiKey.startsWith('sk-or-')) {
+    modelName = 'anthropic/claude-3-5-haiku';
+    targetUrl = 'https://openrouter.ai/api/v1/chat/completions';
+    useCorsProxy = false; // OpenRouter supports CORS natively
+  }
+
+  // Override with Custom Endpoint if provided (Local AI)
+  if (customEndpoint) {
+    targetUrl = customEndpoint;
+    modelName = customModel || 'qwen2.5:7b';
+    useCorsProxy = false; // Usually local servers handle their own CORS
+  }
+
   const body = {
-    model: GROQ_MODEL,
+    model: modelName,
     messages: messages,
     tools: tools,
     temperature: 0.7,
     max_tokens: 1024,
   };
 
-  // Use CORS proxy to bypass Groq's strict browser CORS policy
-  const targetUrl = 'https://api.groq.com/openai/v1/chat/completions';
-  const url = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+  const url = useCorsProxy ? `https://corsproxy.io/?${encodeURIComponent(targetUrl)}` : targetUrl;
+
+  const reqHeaders = {
+    'Content-Type': 'application/json',
+    'HTTP-Referer': window.location.href, // Required by OpenRouter
+    'X-Title': 'Memory Vault' // Required by OpenRouter
+  };
+  
+  // Add Authorization if API key exists (Local AI might not need it, but safe to send dummy or real)
+  if (groqApiKey) {
+    reqHeaders['Authorization'] = `Bearer ${groqApiKey}`;
+  } else if (customEndpoint) {
+    reqHeaders['Authorization'] = 'Bearer local'; // Some local APIs require any string
+  }
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${groqApiKey}`
-    },
+    headers: reqHeaders,
     body: JSON.stringify(body),
   });
 
@@ -581,10 +624,7 @@ ${JSON.stringify(folderTree.slice(0, 50), null, 0)}`;
     const followUpBody = { ...body, messages: messages };
     const followUpRes = await fetch(url, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${groqApiKey}`
-      },
+      headers: reqHeaders,
       body: JSON.stringify(followUpBody),
     });
 
