@@ -21,10 +21,10 @@ let isAiThinking = false;
 function showAiSetupModal() {
   document.getElementById('groq-api-key-input').value = groqApiKey;
   document.getElementById('gemini-api-key-input').value = geminiApiKey;
-  
+
   const endpointInput = document.getElementById('ai-endpoint-input');
   if (endpointInput) endpointInput.value = customEndpoint;
-  
+
   const modelInput = document.getElementById('ai-model-input');
   if (modelInput) modelInput.value = customModel;
 
@@ -38,29 +38,29 @@ function hideAiSetupModal() {
 function saveAiSetup() {
   const gKey = document.getElementById('groq-api-key-input').value.trim();
   const gemKey = document.getElementById('gemini-api-key-input').value.trim();
-  
+
   const endpointInput = document.getElementById('ai-endpoint-input');
   const modelInput = document.getElementById('ai-model-input');
-  
+
   customEndpoint = endpointInput ? endpointInput.value.trim() : '';
   customModel = modelInput ? modelInput.value.trim() : '';
-  
+
   groqApiKey = gKey;
   geminiApiKey = gemKey;
-  
+
   localStorage.setItem(AI_STORAGE_KEY, groqApiKey);
   localStorage.setItem(GEMINI_STORAGE_KEY, geminiApiKey);
   localStorage.setItem('memory-ai-endpoint', customEndpoint);
   localStorage.setItem('memory-ai-model', customModel);
-  
+
   hideAiSetupModal();
   showToast('บันทึกการตั้งค่า AI สำเร็จ', 'success');
-  
+
   showAiWelcomeMessage();
 }
 
 function isAiConfigured() {
-  return !!groqApiKey || !!customEndpoint;
+  return !!groqApiKey || !!customEndpoint || !!geminiApiKey;
 }
 
 // ──── Build File Index for AI ────
@@ -205,10 +205,10 @@ const AI_TOOLS = [
     parameters: {
       type: 'object',
       properties: {
-        fileIds: { 
-          type: 'array', 
+        fileIds: {
+          type: 'array',
           items: { type: 'string' },
-          description: 'รายชื่อ ID ของไฟล์ทั้งหมดที่ต้องการย้าย' 
+          description: 'รายชื่อ ID ของไฟล์ทั้งหมดที่ต้องการย้าย'
         },
         targetFolderId: { type: 'string', description: 'ID ของโฟลเดอร์ปลายทาง (ใส่ "root" เพื่อย้ายไปหน้าแรก)' },
       },
@@ -222,10 +222,10 @@ const AI_TOOLS = [
       type: 'object',
       properties: {
         folderName: { type: 'string', description: 'ชื่อโฟลเดอร์ใหม่ที่ต้องการสร้าง' },
-        fileIds: { 
-          type: 'array', 
+        fileIds: {
+          type: 'array',
           items: { type: 'string' },
-          description: 'รายชื่อ ID ของไฟล์ทั้งหมดที่ต้องการย้ายเข้าไป' 
+          description: 'รายชื่อ ID ของไฟล์ทั้งหมดที่ต้องการย้ายเข้าไป'
         },
       },
       required: ['folderName', 'fileIds'],
@@ -269,7 +269,7 @@ async function executeAiTool(toolName, args) {
       const targetType = (fileType && fileType !== 'all') ? fileType : 'all';
       const filterEl = document.getElementById('type-filter');
       if (filterEl) filterEl.value = targetType;
-      
+
       // Update custom UI
       const optionBtn = document.querySelector(`.custom-filter-option[data-value="${targetType}"]`);
       if (optionBtn) {
@@ -343,7 +343,7 @@ async function executeAiTool(toolName, args) {
     case 'move_files': {
       const { fileIds, targetFolderId } = args;
       if (!Array.isArray(fileIds)) return { success: false, message: 'fileIds ต้องเป็น array' };
-      
+
       let movedCount = 0;
       for (const id of fileIds) {
         const fileToMove = allFiles.find(f => f.id === id);
@@ -353,7 +353,7 @@ async function executeAiTool(toolName, args) {
           movedCount++;
         }
       }
-      
+
       showToast(`ย้ายไฟล์สำเร็จ ${movedCount} รายการ`, 'success');
       await refreshFiles();
       scheduleAutoSync();
@@ -576,7 +576,7 @@ ${JSON.stringify(folderTree.slice(0, 50), null, 0)}`;
     'HTTP-Referer': window.location.href, // Required by OpenRouter
     'X-Title': 'Memory Vault' // Required by OpenRouter
   };
-  
+
   // Add Authorization if API key exists (Local AI might not need it, but safe to send dummy or real)
   if (groqApiKey) {
     reqHeaders['Authorization'] = `Bearer ${groqApiKey}`;
@@ -644,6 +644,113 @@ ${JSON.stringify(folderTree.slice(0, 50), null, 0)}`;
   return responseText || 'ดำเนินการเรียบร้อยแล้วครับ ✅';
 }
 
+// ──── Call Gemini Native API ────
+async function callGeminiNative(userMessage) {
+  if (!geminiApiKey) throw new Error('ยังไม่ได้ตั้งค่า Gemini API Key');
+
+  const fileIndex = buildFileIndex();
+  const folderTree = buildFolderTree();
+
+  const maxFiles = 150;
+  let fileIndexString = JSON.stringify(fileIndex.slice(0, maxFiles), null, 0);
+  if (fileIndex.length > maxFiles) fileIndexString += `\n... (มีไฟล์อีก ${fileIndex.length - maxFiles} ไฟล์ที่ถูกซ่อนไว้)`;
+
+  const systemInstructionText = `คุณคือ "Memory AI" — ผู้ช่วยอัจฉริยะประจำแอปเก็บไฟล์ส่วนตัวชื่อ Memory
+คุณมีความสามารถในการจัดการไฟล์ ค้นหา และวิเคราะห์ข้อมูลในเครื่องของผู้ใช้
+จงตอบคำถามเป็นภาษาไทยอย่างเป็นธรรมชาติ สุภาพ เป็นกันเอง
+หากผู้ใช้สั่งให้จัดการไฟล์ ให้เรียกใช้ Tool ที่มีให้
+
+ข้อมูลไฟล์ทั้งหมดในระบบ (JSON):
+${fileIndexString}
+
+ข้อมูลโฟลเดอร์ทั้งหมด (JSON):
+${JSON.stringify(folderTree)}
+
+เวลาปัจจุบัน: ${new Date().toLocaleString('th-TH')}`;
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`;
+
+  const contents = [];
+  for (const msg of aiChatHistory) {
+    contents.push({
+      role: msg.role === 'bot' || msg.role === 'model' ? 'model' : 'user',
+      parts: [{ text: msg.text }]
+    });
+  }
+  contents.push({ role: 'user', parts: [{ text: userMessage }] });
+
+  const body = {
+    systemInstruction: { parts: [{ text: systemInstructionText }] },
+    contents: contents,
+    tools: [{ functionDeclarations: AI_TOOLS }]
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Gemini API Error: ${res.status}`);
+  }
+
+  let data = await res.json();
+  let candidate = data.candidates?.[0];
+  if (!candidate) throw new Error('ไม่ได้รับการตอบกลับจาก Gemini');
+
+  let responseText = '';
+  let iterations = 0;
+
+  while (candidate?.content?.parts?.some(p => p.functionCall) && iterations < 5) {
+    iterations++;
+    const toolParts = candidate.content.parts.filter(p => p.functionCall);
+    contents.push(candidate.content);
+
+    const functionResponses = [];
+    for (const tPart of toolParts) {
+      const fn = tPart.functionCall;
+      const name = fn.name;
+      const args = fn.args || {};
+      const result = await executeAiTool(name, args);
+      functionResponses.push({
+        functionResponse: {
+          name: name,
+          response: { result: result }
+        }
+      });
+    }
+    
+    contents.push({ role: 'user', parts: functionResponses });
+
+    const followUpRes = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: body.systemInstruction,
+        contents: contents,
+        tools: body.tools
+      })
+    });
+
+    if (!followUpRes.ok) {
+      const err = await followUpRes.json().catch(() => ({}));
+      throw new Error(err.error?.message || `Gemini API Error: ${followUpRes.status}`);
+    }
+
+    data = await followUpRes.json();
+    candidate = data.candidates?.[0];
+  }
+
+  if (candidate?.content?.parts) {
+    responseText = candidate.content.parts.filter(p => p.text).map(p => p.text).join('\n');
+  }
+
+  return responseText || 'ดำเนินการเรียบร้อยแล้วครับ ✅';
+}
+
+
 // ──── Chat UI Logic ────
 function toggleAiChat() {
   const panel = document.getElementById('ai-chat-panel');
@@ -674,12 +781,12 @@ function showAiSetupInChat() {
     <div class="ai-msg ai-msg-bot">
       <div class="ai-msg-bubble">
         สวัสดีครับ! 🤖 ผมคือ <strong>Memory AI</strong> (Powered by Groq & Gemini)<br><br>
-        เพื่อเริ่มใช้งาน กรุณาตั้งค่า API Key (ฟรี) ก่อนครับ
-        <div style="margin-top:12px;">
-          <button class="ai-key-save-btn" style="width: 100%;" onclick="showAiSetupModal()">ตั้งค่า API Keys</button>
+          เพื่อเริ่มใช้งาน กรุณาตั้งค่า API Key (ฟรี) ก่อนครับ
+          <div style="margin-top:12px;">
+            <button class="ai-key-save-btn" style="width: 100%;" onclick="showAiSetupModal()">ตั้งค่า API Keys</button>
+          </div>
         </div>
       </div>
-    </div>
   `;
 }
 
@@ -750,13 +857,18 @@ async function handleAiSend() {
   showAiThinking();
 
   try {
-    const reply = await callGroq(msg);
+    let reply;
+    if (geminiApiKey) {
+      reply = await callGeminiNative(msg);
+    } else {
+      reply = await callGroq(msg);
+    }
     removeAiThinking();
     appendAiMessage('bot', reply);
     aiChatHistory.push({ role: 'model', text: reply });
   } catch (err) {
     removeAiThinking();
-    appendAiMessage('bot', `❌ เกิดข้อผิดพลาด: ${err.message}`);
+    appendAiMessage('bot', `❌ เกิดข้อผิดพลาด: ${ err.message }`);
   } finally {
     isAiThinking = false;
   }
@@ -797,7 +909,7 @@ async function analyzeFileWithGemini() {
 
     if (file.textContent) {
       // Text file
-      payload.contents[0].parts.push({ text: `\n\nเนื้อหาไฟล์:\n${file.textContent}` });
+      payload.contents[0].parts.push({ text: `\n\nเนื้อหาไฟล์: \n${ file.textContent }` });
     } else if (file.data) {
       // Base64 file (Image, etc)
       const base64Data = file.data.split(',')[1];
@@ -819,28 +931,28 @@ async function analyzeFileWithGemini() {
       body: JSON.stringify(payload)
     });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Gemini API Error: ${errText}`);
-    }
-
-    const data = await res.json();
-    const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'ไม่สามารถวิเคราะห์ได้';
-
-    // Show result in a modal or chat
-    const chatPanel = document.getElementById('ai-chat-panel');
-    if (chatPanel && chatPanel.classList.contains('hidden')) {
-      toggleAiChat();
-    }
-    appendAiMessage('bot', `**ผลการวิเคราะห์ไฟล์ "${file.name}":**\n\n${resultText}`);
-    
-  } catch (error) {
-    console.error(error);
-    showToast('เกิดข้อผิดพลาดในการวิเคราะห์', 'error');
-  } finally {
-    btn.style.opacity = '1';
-    txt.textContent = 'AI วิเคราะห์เนื้อหา';
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Gemini API Error: ${errText}`);
   }
+
+  const data = await res.json();
+  const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'ไม่สามารถวิเคราะห์ได้';
+
+  // Show result in a modal or chat
+  const chatPanel = document.getElementById('ai-chat-panel');
+  if (chatPanel && chatPanel.classList.contains('hidden')) {
+    toggleAiChat();
+  }
+  appendAiMessage('bot', `**ผลการวิเคราะห์ไฟล์ "${file.name}":**\n\n${resultText}`);
+
+} catch (error) {
+  console.error(error);
+  showToast('เกิดข้อผิดพลาดในการวิเคราะห์', 'error');
+} finally {
+  btn.style.opacity = '1';
+  txt.textContent = 'AI วิเคราะห์เนื้อหา';
+}
 }
 
 // ──── Voice Search ────
@@ -848,12 +960,12 @@ let recognition = null;
 function startVoiceSearch() {
   const btn = document.getElementById('ai-voice-btn');
   const input = document.getElementById('ai-chat-input');
-  
+
   if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
     showToast('เบราว์เซอร์นี้ไม่รองรับการค้นหาด้วยเสียง', 'error');
     return;
   }
-  
+
   if (btn.classList.contains('recording')) {
     if (recognition) recognition.stop();
     return;
@@ -865,29 +977,29 @@ function startVoiceSearch() {
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
 
-  recognition.onstart = function() {
+  recognition.onstart = function () {
     btn.classList.add('recording');
     input.placeholder = 'กำลังฟัง...';
   };
 
-  recognition.onresult = function(event) {
+  recognition.onresult = function (event) {
     const transcript = event.results[0][0].transcript;
     input.value = transcript;
-    
+
     // Auto send
     setTimeout(() => {
       handleAiSend();
     }, 500);
   };
 
-  recognition.onerror = function(event) {
+  recognition.onerror = function (event) {
     console.error("Speech recognition error", event.error);
     showToast('เกิดข้อผิดพลาดในการรับเสียง', 'error');
     btn.classList.remove('recording');
     input.placeholder = 'พิมพ์ข้อความ...';
   };
 
-  recognition.onend = function() {
+  recognition.onend = function () {
     btn.classList.remove('recording');
     input.placeholder = 'พิมพ์ข้อความ...';
   };
@@ -959,7 +1071,12 @@ async function sendSpotlightCommand() {
   if (content) content.innerHTML = '<div class="spotlight-thinking"><span></span><span></span><span></span></div>';
 
   try {
-    const reply = await callGroq(msg);
+    let reply;
+    if (geminiApiKey) {
+      reply = await callGeminiNative(msg);
+    } else {
+      reply = await callGroq(msg);
+    }
     // Format response
     if (content) {
       content.innerHTML = reply
@@ -1001,23 +1118,23 @@ function startSpotlightVoice() {
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
 
-  recognition.onstart = function() {
+  recognition.onstart = function () {
     btn.classList.add('recording');
     input.placeholder = '🎙️ กำลังฟัง...';
   };
 
-  recognition.onresult = function(event) {
+  recognition.onresult = function (event) {
     const transcript = event.results[0][0].transcript;
     input.value = transcript;
     setTimeout(() => sendSpotlightCommand(), 300);
   };
 
-  recognition.onerror = function() {
+  recognition.onerror = function () {
     btn.classList.remove('recording');
     input.placeholder = 'สั่งงาน Jarvis...';
   };
 
-  recognition.onend = function() {
+  recognition.onend = function () {
     btn.classList.remove('recording');
     input.placeholder = 'สั่งงาน Jarvis...';
   };
@@ -1026,7 +1143,7 @@ function startSpotlightVoice() {
 }
 
 // ──── Global Keyboard Shortcut: Ctrl + Space ────
-document.addEventListener('keydown', function(e) {
+document.addEventListener('keydown', function (e) {
   // Ctrl + Space (or Cmd + Space on Mac)
   if ((e.ctrlKey || e.metaKey) && e.code === 'Space') {
     e.preventDefault();
