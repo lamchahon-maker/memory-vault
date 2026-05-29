@@ -6,7 +6,7 @@
 // ──── Config ────
 const AI_STORAGE_KEY = 'memory-ai-key';
 const GEMINI_STORAGE_KEY = 'memory-gemini-key';
-const GROQ_MODEL = 'llama-3.1-8b-instant';
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const GEMINI_MODEL = 'gemini-2.5-flash';
 
 // API Key จะถูกเก็บใน localStorage เท่านั้น — ไม่มี hardcode ใน source code
@@ -64,10 +64,6 @@ function buildFileIndex() {
       storedAt: f.storedAt || '',
       lastModified: f.lastModified || '',
     };
-    // Add AI description if available
-    if (f.aiDescription) info.aiDescription = f.aiDescription;
-    // Add text snippet for code/text files (first 200 chars)
-    if (f.textContent) info.textSnippet = f.textContent.substring(0, 300);
     // Add tags and pin status
     info.tags = f.tags || [];
     info.isPinned = !!f.isPinned;
